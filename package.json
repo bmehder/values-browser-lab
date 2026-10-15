@@ -1,0 +1,12 @@
+{
+  "name": "values-browser-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap",
+    "start": "npm run build && python3 -m http.server 8000 --bind 127.0.0.1",
+    "test": "gleam test",
+    "check": "gleam format --check src test && npm test && npm run build"
+  },
+  "devDependencies": { "esbuild": "^0.28.2" }
+}
