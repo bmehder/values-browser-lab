@@ -1,6 +1,6 @@
 # Values / Browser Lab
 
-A runnable Gleam application with its own small browser coordinator. No framework runtime and no API key.
+A runnable Gleam experiment: meaningful types, messages that select functions, and explicitly interpreted effects. No framework runtime or API key.
 
 ## Run
 
@@ -11,95 +11,71 @@ gleam deps download
 npm start
 ```
 
-Open http://127.0.0.1:8027. Stop with Ctrl+C. The first two setup commands are already complete on this computer. After editing code, restart `npm start` (or run `npm run build` with the server still running) and refresh the page.
+Open http://127.0.0.1:8000. Stop with Ctrl+C. Dependencies are already installed on this computer. After code edits, run `npm run build` and refresh. `npm run check` checks formatting, runs seven tests, and builds the app.
 
-```sh
-npm run check
-```
-
-This checks formatting, runs six meaningful state-transition tests, and builds the browser app. Gleam 1.18.1 and Node 24 were used for the initial run.
-
-## Try it
-
-1. Submit a search. The application requests `SearchService`, then receives `HttpReturnedSearch`.
-2. Edit the input while a search is pending. Draft input and the submitted query remain separate.
-3. Read the clock once. Start the live clock to install an ongoing subscription, then stop it to remove the interval.
-4. Save the query, edit it, then restore it. The storage operation is interpreted and its result comes back as a message.
-5. Copy the query. Permission or API failures become a result message too.
-6. Start the timer, then restart it before it finishes. An older completion cannot finish the newer timer.
-7. Watch the activity list and open the model inspector.
-
-Search uses the public Hacker News Algolia API. Only searches you submit go to that service. It needs an internet connection; failures and a 12-second timeout appear in the interface. Saved queries stay in this browser's local storage. Clipboard support depends on the browser; localhost is a secure context for supported browser APIs.
-
-## Read the code in this order
-
-### 1. `src/domain.gleam`
-
-`Model`, `Message`, `Effect`, `Subscription`, and `View` are values. `update` is a pure function:
+## The important change
 
 ```gleam
-pub fn update(model: Model, message: Message) -> #(Model, List(Effect)) {
-  model
-  |> decide(message)
-  |> record(message)
-}
+pub type Operation = fn(Model) -> #(Model, List(Effect))
 ```
 
-`decide` contains application policy. `record` adds the visible activity history. `view` derives a screen description. `subscriptions` says whether the one ongoing event source, `EverySecond`, should be active.
-
-The pipe composes pure transformations within a turn. Messages connect separate turns across time.
-
-### 2. `src/effects.gleam`
-
-`perform` interprets each effect. For example:
+`update` takes a message and returns an operation. Each branch names what that operation means:
 
 ```gleam
-SearchService(id, query) -> search(query, fn(stories) {
-  dispatch(HttpReturnedSearch(id, Ok(stories)))
-}, fn(reason) {
-  dispatch(HttpReturnedSearch(id, Error(reason)))
-})
+UserSubmittedSearch -> operations.submit_search()
+HttpReturnedSearch(request, result) -> operations.receive_search(request, result)
+TimerElapsed(timer) -> operations.finish_timer(timer)
 ```
 
-The handler reports the outcome. It does not change the model or decide whether that result is still relevant.
-
-### 3. `src/runtime.mjs`
-
-The coordinator holds the current model and drains an explicit message queue:
+An operation is a pure function value. Selecting it does not capture the current model or perform a browser action. The coordinator later applies it to the current model:
 
 ```js
-const [nextModel, effects] = update(model, queue.shift());
+const operation = update(queue.shift());
+const [nextModel, effects] = operation(model);
 model = nextModel;
 render(view(model));
 reconcile(subscriptions(model));
 for (const effect of effects) perform(effect, dispatch);
 ```
 
-The `processing` guard makes immediate responses safe: dispatch appends them to the queue instead of re-entering `update`. The returned model has already been retained when the next message is handled.
+The actual runtime combines the first two lines as `update(queue.shift())(model)`. `update` also wraps the selected operation with a pure activity-recording operation; messages and requested effects stay structured until presentation.
 
-This JavaScript file is intentionally visible and small: it shows the actual mechanism instead of outsourcing it to a framework. Rendering writes a Gleam `View` record to existing DOM elements using `textContent`. It does not embed untrusted HTML.
+## Read the code
 
-### 4. `src/browser.mjs`
+- `src/model.gleam`: The domain vocabulary. `DraftQuery` differs from `SearchQuery`; `SearchRequestId` differs from `TimerId`; durations, clock readings, story titles, URLs, and failure reasons have names. `Model` uses named fields and explicit clock, storage, clipboard, search, and timer states. It has no Boolean flags or feedback strings.
+- `src/domain.gleam`: The exhaustive, readable message-to-operation dispatch table. No state transitions, validation, or browser calls in its branches.
+- `src/operations.gleam`: The pure operation implementations. Each returns a function. Transitions and obsolete-response policies live here.
+- `src/presentation.gleam`: Chooses display text and projects domain values into a `Screen`. Success and failure retain their meaning until this point. Also derives the clock subscription from its mode.
+- `src/effects.gleam`: `perform` interprets effect values. It unwraps representations at the foreign-function boundary and wraps external outcomes as typed messages.
+- `src/runtime.mjs`: Holds the model, drains the queue, applies operations, renders, and reconciles the live-clock subscription. Immediate responses are enqueued instead of re-entering update.
+- `src/browser.mjs`: Real browser operations: HTTP, time, storage, clipboard, and timers. HTTP response shapes and link schemes are checked before typed stories enter the app.
+- `src/main.gleam`: Wires the functions together and translates primitive DOM input into domain values.
 
-The foreign-function adapters call real browser APIs: `fetch`, `Date`, `localStorage`, `navigator.clipboard`, and `setTimeout`. The HTTP adapter checks response shapes and restricts story links to HTTP(S). It turns successful decoded stories into a typed Gleam list.
+Named wrappers distinguish meanings; their constructors alone do not validate arbitrary strings or numeric ranges. Input normalization is an operation policy; external response validation belongs at the boundary. Presentation records use strings because they are instructions for the screen, rather than application state.
 
-The subscription adapter in the runtime manages `setInterval` and removes it when the model no longer requests it. This sample has one subscription type; adding another requires extending reconciliation explicitly.
+## Try it
 
-## Design boundaries
+1. Search Hacker News. Edit the input during the request; the submitted search retains its own query. Newer searches supersede older results.
+2. Read the clock once, or start and stop its live subscription.
+3. Save a query locally, edit it, then restore it.
+4. Copy the query. Unavailable or denied clipboard access becomes a failure message.
+5. Start and restart the timer. An old timer completion cannot finish the newer timer.
+6. Watch the activity history and inspect the model.
 
-- Search request identities prevent obsolete results from replacing the current search. They do not cancel older requests; those requests still complete or time out.
-- Timer identities reject old completions. Restarting does not cancel the older browser timer.
-- The live clock is off initially; no external search occurs until you submit one.
-- `View` is a screen description, not a virtual DOM. The handwritten renderer keeps the experiment small.
-- This is a local teaching app. It does not include routing, authentication, persistent application history, or production deployment infrastructure.
+Submitted searches go to the public Hacker News search API at Algolia. The app requires an internet connection for search, handles service errors, and times out after 12 seconds. Storage stays in this browser. No search is sent at startup.
 
-## Add a capability
+## Boundaries
 
-1. Add an `Effect` case describing the request and a `Message` case for its outcome.
-2. Return the effect from the appropriate branch of `decide`.
-3. Add a branch to `perform` and a browser adapter.
-4. Handle the response message in `decide`.
-5. Expose a control and extend the screen description if needed.
+Ignoring an obsolete search does not cancel the older request. Restarting a timer does not cancel its older timeout. The live-clock subscription does remove its interval when stopped. This experiment has one subscription type; another source needs its own explicit reconciliation logic.
 
-Keep business decisions in Gleam. Keep environmental operations at the boundary. For an ongoing event source, add a subscription description and its setup/cleanup handling instead of starting a permanent listener from every update.
-# values-browser-lab
+The app is a local teaching example with a handwritten screen renderer. It does not include routing, accounts, deployment infrastructure, or a virtual DOM.
+
+## Add an operation
+
+1. Name the domain values and states involved in `model.gleam`.
+2. Add a message and a readable branch in `domain.update`.
+3. Implement the operation in `operations.gleam`.
+4. If the world must be involved, return an effect description, interpret it in `perform`, and route its outcome back as a message.
+5. Add presentation and controls where needed.
+
+The pipe composes pure operations within a turn. The message queue connects separate turns across time.

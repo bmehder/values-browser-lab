@@ -1,84 +1,114 @@
-import domain.{
-  ClockTicked, EverySecond, Found, HttpReturnedSearch, Idle, Loading,
-  SearchService, StartTimer, StorageReturnedDraft, Story, TimerElapsed,
-  UserEditedQuery, UserStartedTimer, UserSubmittedSearch, UserToggledClock,
-}
+import domain
 import gleeunit
+import model.{
+  ClockRead, ClockReading, ClockTicked, DraftQuery, DraftRestored, EverySecond,
+  FailureReason, HttpReturnedSearch, LiveClock, ManualClock, Milliseconds, Model,
+  SearchQuery, SearchReady, SearchRequestId, SearchService, SearchSucceeded,
+  Searching, StartTimer, StorageFailed, StorageReturnedDraft, TimerElapsed,
+  TimerFinished, TimerId, TimerRunning, UserEditedQuery, UserStartedTimer,
+  UserSubmittedSearch, UserToggledClock,
+}
+import presentation
 
 pub fn main() {
   gleeunit.main()
 }
 
+fn apply(
+  current: model.Model,
+  message: model.Message,
+) -> #(model.Model, List(model.Effect)) {
+  domain.update(message)(current)
+}
+
+pub fn operation_is_reusable_without_captured_model_test() {
+  let submit = domain.update(UserSubmittedSearch)
+  let #(one, _) = submit(model.initial())
+  let #(two, _) =
+    submit(Model(..model.initial(), draft_query: DraftQuery("types")))
+  let assert Searching(
+    SearchRequestId(1),
+    SearchQuery("functional programming"),
+  ) = one.search_state
+  let assert Searching(SearchRequestId(1), SearchQuery("types")) =
+    two.search_state
+}
+
 pub fn stale_search_does_not_replace_current_results_test() {
-  let assert #(one, []) =
-    domain.update(domain.initial(), UserEditedQuery("gleam"))
-  let assert #(pending_one, [SearchService(1, "gleam")]) =
-    domain.update(one, UserSubmittedSearch)
-  let assert #(two, []) = domain.update(pending_one, UserEditedQuery("types"))
-  let assert #(pending_two, [SearchService(2, "types")]) =
-    domain.update(two, UserSubmittedSearch)
+  let #(pending_one, _) = apply(model.initial(), UserSubmittedSearch)
+  let assert #(edited, []) =
+    apply(pending_one, UserEditedQuery(DraftQuery("types")))
+  let assert #(
+    pending_two,
+    [SearchService(SearchRequestId(2), SearchQuery("types"))],
+  ) = apply(edited, UserSubmittedSearch)
   let assert #(old, []) =
-    domain.update(
-      pending_two,
-      HttpReturnedSearch(1, Ok([Story("Old", "https://example.com")])),
+    apply(pending_two, HttpReturnedSearch(SearchRequestId(1), Ok([])))
+  let assert Searching(SearchRequestId(2), SearchQuery("types")) =
+    old.search_state
+  let assert #(new, []) =
+    apply(old, HttpReturnedSearch(SearchRequestId(2), Ok([])))
+  assert new.search_state == SearchSucceeded(SearchQuery("types"), [])
+  let assert #(late, []) =
+    apply(
+      new,
+      HttpReturnedSearch(SearchRequestId(1), Error(FailureReason("offline"))),
     )
-  let assert Loading(2, "types") = old.search
-  let assert #(new, []) = domain.update(old, HttpReturnedSearch(2, Ok([])))
-  let assert Found("types", []) = new.search
-  let assert #(late_failure, []) =
-    domain.update(new, HttpReturnedSearch(1, Error("offline")))
-  assert late_failure.search == new.search
+  assert late.search_state == new.search_state
 }
 
 pub fn blank_submission_supersedes_pending_search_test() {
-  let #(pending, _) = domain.update(domain.initial(), UserSubmittedSearch)
-  let assert #(blank, []) = domain.update(pending, UserEditedQuery("   "))
-  let assert #(idle, []) = domain.update(blank, UserSubmittedSearch)
-  let assert #(late, []) = domain.update(idle, HttpReturnedSearch(1, Ok([])))
-  assert late.search == Idle
+  let #(pending, _) = apply(model.initial(), UserSubmittedSearch)
+  let assert #(blank, []) = apply(pending, UserEditedQuery(DraftQuery("   ")))
+  let assert #(idle, []) = apply(blank, UserSubmittedSearch)
+  let assert #(late, []) =
+    apply(idle, HttpReturnedSearch(SearchRequestId(1), Ok([])))
+  assert late.search_state == SearchReady
 }
 
 pub fn restarted_timer_ignores_previous_completion_test() {
-  let assert #(one, [StartTimer(1, 3000)]) =
-    domain.update(domain.initial(), UserStartedTimer)
-  let assert #(two, [StartTimer(2, 3000)]) =
-    domain.update(one, UserStartedTimer)
-  let assert #(stale, []) = domain.update(two, TimerElapsed(1))
-  assert stale.timer_waiting
-  let assert #(done, []) = domain.update(stale, TimerElapsed(2))
-  assert !done.timer_waiting
-  assert done.timer == "Three seconds elapsed."
+  let assert #(one, [StartTimer(TimerId(1), Milliseconds(3000))]) =
+    apply(model.initial(), UserStartedTimer)
+  let assert #(two, [StartTimer(TimerId(2), Milliseconds(3000))]) =
+    apply(one, UserStartedTimer)
+  let assert #(stale, []) = apply(two, TimerElapsed(TimerId(1)))
+  assert stale.timer.state == TimerRunning(TimerId(2))
+  let assert #(done, []) = apply(stale, TimerElapsed(TimerId(2)))
+  assert done.timer.state == TimerFinished
+  assert presentation.view(done).timer == "Three seconds elapsed."
 }
 
 pub fn live_clock_subscription_and_late_tick_test() {
-  let initial = domain.initial()
-  assert domain.subscriptions(initial) == []
-  let assert #(on, []) = domain.update(initial, UserToggledClock)
-  assert domain.subscriptions(on) == [EverySecond]
-  let assert #(ticked, []) = domain.update(on, ClockTicked("12:34:56"))
-  assert ticked.clock == "12:34:56"
-  let assert #(off, []) = domain.update(ticked, UserToggledClock)
-  assert domain.subscriptions(off) == []
-  let assert #(late, []) = domain.update(off, ClockTicked("12:34:57"))
-  assert late.clock == "12:34:56"
+  let initial = model.initial()
+  assert presentation.subscriptions(initial) == []
+  let assert #(on, []) = apply(initial, UserToggledClock)
+  assert on.clock.mode == LiveClock
+  assert presentation.subscriptions(on) == [EverySecond]
+  let assert #(ticked, []) = apply(on, ClockTicked(ClockReading("12:34:56")))
+  let assert #(off, []) = apply(ticked, UserToggledClock)
+  assert off.clock.mode == ManualClock
+  assert presentation.subscriptions(off) == []
+  let assert #(late, []) = apply(off, ClockTicked(ClockReading("12:34:57")))
+  assert late.clock.display == ClockRead(ClockReading("12:34:56"))
 }
 
 pub fn storage_failure_preserves_draft_test() {
-  let initial = domain.initial()
+  let initial = model.initial()
   let assert #(failed, []) =
-    domain.update(initial, StorageReturnedDraft(Error("blocked")))
-  assert failed.draft == initial.draft
-  assert failed.storage == "blocked"
+    apply(initial, StorageReturnedDraft(Error(FailureReason("blocked"))))
+  assert failed.draft_query == initial.draft_query
+  assert failed.storage_state == StorageFailed(FailureReason("blocked"))
   let assert #(restored, []) =
-    domain.update(initial, StorageReturnedDraft(Ok("saved query")))
-  assert restored.draft == "saved query"
+    apply(initial, StorageReturnedDraft(Ok(DraftQuery("saved query"))))
+  assert restored.draft_query == DraftQuery("saved query")
+  assert restored.storage_state == DraftRestored
 }
 
 pub fn editing_draft_preserves_submitted_query_test() {
-  let #(pending, _) = domain.update(domain.initial(), UserSubmittedSearch)
+  let #(pending, _) = apply(model.initial(), UserSubmittedSearch)
   let assert #(edited, []) =
-    domain.update(pending, UserEditedQuery("something else"))
-  let assert Loading(_, submitted) = edited.search
-  assert submitted == "functional programming"
-  assert domain.view(edited).draft == "something else"
+    apply(pending, UserEditedQuery(DraftQuery("something else")))
+  let assert Searching(_, submitted) = edited.search_state
+  assert submitted == SearchQuery("functional programming")
+  assert presentation.view(edited).draft == "something else"
 }

@@ -1,5 +1,5 @@
 // Browser APIs and the untrusted HTTP boundary. Application policy lives in Gleam.
-import { Story } from './domain.mjs';
+import { Story, StoryTitle, StoryUrl } from './model.mjs';
 import { toList } from '../gleam_stdlib/gleam.mjs';
 const storageKey = 'values-browser-lab:draft';
 export const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -16,7 +16,7 @@ export function search(query, success, failure) {
         const fallback = `https://news.ycombinator.com/item?id=${encodeURIComponent(hit.objectID)}`;
         let url = fallback;
         try { const candidate = new URL(hit.url); if (['https:', 'http:'].includes(candidate.protocol)) url = candidate.href; } catch {}
-        return new Story(hit.title, url);
+        return new Story(new StoryTitle(hit.title), new StoryUrl(url));
       });
       success(toList(stories));
     })

@@ -1,21 +1,118 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Values / Browser Lab</title><link rel="stylesheet" href="style.css"><script type="module" src="dist/app.js"></script></head>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Values / Browser Lab</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="dist/app.js"></script>
+</head>
+
 <body>
-<header class="topbar"><a class="brand" href="/">values<span> / browser lab</span></a><span class="badge">GLEAM → JAVASCRIPT</span></header>
-<main>
-<section class="intro"><div><p class="eyebrow">A SMALL PROGRAM. A REAL WORLD.</p><h1>Describe it.<br><em>Then let it happen.</em></h1><p class="lede">Input becomes a message. A pure function decides what comes next. Effects connect those decisions to your browser.</p></div><div class="flow" aria-label="Application cycle"><span>Message</span><b>→</b><span>Update</span><b>→</b><span>Model + Effects</span><div>↓ view <i>·</i> perform ↓ <i>·</i> message ↵</div></div></section>
-<div class="workspace">
-<div class="controls">
-<section class="panel search-panel"><div class="section-top"><span class="eyebrow">01 / EXTERNAL SERVICE</span><span class="pill">HACKER NEWS</span></div><h2>A query goes out.<br>A message comes back.</h2><form id="search-form"><label for="query">Search stories</label><div class="input-row"><input id="query" name="query" autocomplete="off" placeholder="Try functional programming"><button class="primary" type="submit">Search <span aria-hidden="true">↗</span></button></div></form><div class="search-summary" aria-live="polite"><h3 id="search-status"></h3><p id="submitted-query"></p></div><ul id="results" class="results"></ul><p class="footnote">Search requests go to the public Hacker News search API (Algolia). Older responses are ignored when a newer search takes over.</p></section>
-<div class="tools-grid">
-<section class="panel"><p class="eyebrow">02 / TIME</p><div class="clock-line"><span id="clock-dot" class="dot"></span><h2 id="clock-value">Not read yet</h2></div><p>Read once, or subscribe to a tick every second.</p><div class="buttons"><button id="read-time">Read time</button><button id="clock-toggle" aria-pressed="false">Start live clock</button></div></section>
-<section class="panel"><p class="eyebrow">03 / LOCAL STORAGE</p><h2>Keep a thought.</h2><p id="storage-status" aria-live="polite"></p><div class="buttons"><button id="save-query">Save query</button><button id="restore-query">Restore</button></div></section>
-<section class="panel"><p class="eyebrow">04 / CLIPBOARD</p><h2>Take it with you.</h2><p id="clipboard-status" aria-live="polite"></p><button id="copy-query">Copy query <span aria-hidden="true">↗</span></button></section>
-<section class="panel"><p class="eyebrow">05 / TIMER</p><h2>Later is a message.</h2><p id="timer-status" aria-live="polite"></p><button id="timer-button">Start 3-second timer</button></section>
-</div>
-</div>
-<aside class="panel activity-panel"><div class="section-top"><span class="eyebrow">THE CONVERSATION</span><span id="activity-count" class="pill">0</span></div><h2>Watch it unfold.</h2><p>Newest message first. Each line shows what <code>update</code> requested.</p><p id="empty-activity" class="empty">Try one of the controls.<br>Your program’s decisions will appear here.</p><ol id="activity" class="activity"></ol><details><summary>Inspect the current model</summary><pre id="model-value"></pre></details></aside>
-</div>
-<section class="explanation"><div><p class="eyebrow">WHERE TO LOOK</p><h2>Small pieces.<br>Explicit connections.</h2></div><ol><li><strong>domain.gleam</strong><span>Types, pure update, view, and subscription descriptions.</span></li><li><strong>effects.gleam</strong><span>The perform function: effect values become operations.</span></li><li><strong>runtime.mjs</strong><span>Keep the model, drain the queue, render, and reconcile subscriptions.</span></li><li><strong>browser.mjs</strong><span>Fetch, clock, storage, clipboard, and timer adapters.</span></li></ol></section>
-</main><footer>Programming with values. Interacting through effects.<span>A local experiment · No framework runtime</span></footer>
-</body></html>
+  <header class="topbar"><a class="brand" href="/">values<span> / browser lab</span></a>
+    <div class="header-actions"><span class="badge">GLEAM → JAVASCRIPT</span><a class="github-link"
+        href="https://github.com/bmehder/values-browser-lab" target="_blank" rel="noopener noreferrer"
+        aria-label="View source on GitHub" title="View source on GitHub"><svg viewBox="0 0 24 24" width="22" height="22"
+          fill="currentColor" aria-hidden="true">
+          <path
+            d="M12 .75a11.25 11.25 0 0 0-3.558 21.922c.563.104.768-.244.768-.542 0-.267-.01-.975-.015-1.914-3.13.68-3.79-1.508-3.79-1.508-.512-1.3-1.25-1.646-1.25-1.646-1.022-.699.077-.685.077-.685 1.13.08 1.725 1.16 1.725 1.16 1.004 1.72 2.634 1.223 3.276.935.102-.727.393-1.223.715-1.504-2.498-.284-5.124-1.25-5.124-5.565 0-1.23.44-2.233 1.16-3.02-.116-.285-.503-1.43.11-2.978 0 0 .945-.302 3.094 1.154a10.8 10.8 0 0 1 5.625 0c2.148-1.456 3.091-1.154 3.091-1.154.615 1.548.228 2.693.112 2.977.722.788 1.158 1.79 1.158 3.021 0 4.326-2.63 5.278-5.136 5.557.404.348.766 1.034.766 2.084 0 1.504-.014 2.717-.014 3.086 0 .3.203.65.774.54A11.25 11.25 0 0 0 12 .75Z" />
+        </svg></a></div>
+  </header>
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">A SMALL PROGRAM. A REAL WORLD.</p>
+        <h1>Describe it.<br><em>Then let it happen.</em></h1>
+        <p class="lede">Input becomes a message. A pure function decides what comes next. Effects connect those
+          decisions to your browser.</p>
+      </div>
+      <div class="flow" aria-label="Application cycle">
+        <span>Message</span><b>→</b><span>Operation</span><b>→</b><span>Model + Effects</span>
+        <div>update selects <i>·</i> apply to model <i>·</i> perform ↵</div>
+      </div>
+    </section>
+    <div class="workspace">
+      <div class="controls">
+        <section class="panel search-panel">
+          <div class="section-top"><span class="eyebrow">01 / EXTERNAL SERVICE</span><span class="pill">HACKER
+              NEWS</span></div>
+          <h2>A query goes out.<br>A message comes back.</h2>
+          <form id="search-form"><label for="query">Search stories</label>
+            <div class="input-row"><input id="query" name="query" autocomplete="off"
+                placeholder="Try functional programming"><button class="primary" type="submit">Search <span
+                  aria-hidden="true">↗</span></button></div>
+          </form>
+          <div class="search-summary" aria-live="polite">
+            <h3 id="search-status"></h3>
+            <p id="submitted-query"></p>
+          </div>
+          <ul id="results" class="results"></ul>
+          <p class="footnote">Search requests go to the public Hacker News search API (Algolia). Older responses are
+            ignored when a newer search takes over.</p>
+        </section>
+        <div class="tools-grid">
+          <section class="panel">
+            <p class="eyebrow">02 / TIME</p>
+            <div class="clock-line"><span id="clock-dot" class="dot"></span>
+              <h2 id="clock-value">Not read yet</h2>
+            </div>
+            <p>Read once, or subscribe to a tick every second.</p>
+            <div class="buttons"><button id="read-time">Read time</button><button id="clock-toggle"
+                aria-pressed="false">Start live clock</button></div>
+          </section>
+          <section class="panel">
+            <p class="eyebrow">03 / LOCAL STORAGE</p>
+            <h2>Keep a thought.</h2>
+            <p id="storage-status" aria-live="polite"></p>
+            <div class="buttons"><button id="save-query">Save query</button><button id="restore-query">Restore</button>
+            </div>
+          </section>
+          <section class="panel">
+            <p class="eyebrow">04 / CLIPBOARD</p>
+            <h2>Take it with you.</h2>
+            <p id="clipboard-status" aria-live="polite"></p><button id="copy-query">Copy query <span
+                aria-hidden="true">↗</span></button>
+          </section>
+          <section class="panel">
+            <p class="eyebrow">05 / TIMER</p>
+            <h2>Later is a message.</h2>
+            <p id="timer-status" aria-live="polite"></p><button id="timer-button">Start 3-second timer</button>
+          </section>
+        </div>
+      </div>
+      <aside class="panel activity-panel">
+        <div class="section-top"><span class="eyebrow">THE CONVERSATION</span><span id="activity-count"
+            class="pill">0</span></div>
+        <h2>Watch it unfold.</h2>
+        <p>Newest message first. Each line shows what the chosen operation requested.</p>
+        <p id="empty-activity" class="empty">Try one of the controls.<br>Your program’s decisions will appear here.</p>
+        <ol id="activity" class="activity"></ol>
+        <details>
+          <summary>Inspect the current model</summary>
+          <pre id="model-value"></pre>
+        </details>
+      </aside>
+    </div>
+    <section class="explanation">
+      <div>
+        <p class="eyebrow">WHERE TO LOOK</p>
+        <h2>Small pieces.<br>Explicit connections.</h2>
+      </div>
+      <ol>
+        <li><strong>model.gleam</strong><span>Named values, messages, and explicit application states.</span></li>
+        <li><strong>domain.gleam</strong><span>Read a message. Return the operation it describes.</span></li>
+        <li><strong>operations.gleam</strong><span>Pure functions from the current model to the next turn.</span></li>
+        <li><strong>presentation.gleam</strong><span>Turn structured state into words for the screen.</span></li>
+        <li><strong>effects.gleam</strong><span>The perform function: effect values become operations.</span></li>
+        <li><strong>runtime.mjs</strong><span>Keep the model, drain the queue, render, and reconcile
+            subscriptions.</span></li>
+        <li><strong>browser.mjs</strong><span>Fetch, clock, storage, clipboard, and timer adapters.</span></li>
+      </ol>
+    </section>
+  </main>
+  <footer>Programming with values. Interacting through effects.<span>A local experiment · No framework runtime</span>
+  </footer>
+</body>
+
+</html>

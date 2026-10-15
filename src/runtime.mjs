@@ -15,7 +15,7 @@ export function start(initial, update, view, subscriptions, perform, actions) {
     processing = true;
     try {
       while (queue.length) {
-        const [nextModel, effects] = update(model, queue.shift());
+        const [nextModel, effects] = update(queue.shift())(model);
         model = nextModel;                       // Commit first.
         render(view(model));                    // Derive the screen.
         reconcile(subscriptions(model));        // Maintain ongoing sources.
@@ -39,13 +39,13 @@ export function start(initial, update, view, subscriptions, perform, actions) {
     $('search-status').textContent = screen.status;
     $('submitted-query').textContent = screen.query;
     $('clock-value').textContent = screen.clock;
-    $('clock-toggle').textContent = screen.live_clock ? 'Stop live clock' : 'Start live clock';
-    $('clock-toggle').setAttribute('aria-pressed', String(screen.live_clock));
-    $('clock-dot').classList.toggle('live', screen.live_clock);
+    $('clock-toggle').textContent = screen.clock_action_label;
+    $('clock-toggle').setAttribute('aria-pressed', String(screen.clock_mode === 'live'));
+    $('clock-dot').classList.toggle('live', screen.clock_mode === 'live');
     $('storage-status').textContent = screen.storage;
     $('clipboard-status').textContent = screen.clipboard;
     $('timer-status').textContent = screen.timer;
-    $('timer-button').textContent = screen.timer_waiting ? 'Restart timer' : 'Start 3-second timer';
+    $('timer-button').textContent = screen.timer_action_label;
     const results = screen.stories.toArray();
     $('results').replaceChildren(...results.map(story => {
       const li = document.createElement('li'); const a = document.createElement('a');

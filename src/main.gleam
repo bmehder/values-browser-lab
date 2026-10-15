@@ -1,10 +1,12 @@
-import domain.{
-  type Effect, type Message, type Model, type Subscription, type View,
+import domain
+import effects
+import model.{
+  type Effect, type Message, type Model, type Operation, type Subscription,
   ClockTicked, UserCopiedQuery, UserEditedQuery, UserRequestedTime,
   UserRestoredDraft, UserSavedDraft, UserStartedTimer, UserSubmittedSearch,
   UserToggledClock,
 }
-import effects
+import presentation.{type Screen}
 
 pub type Actions {
   Actions(
@@ -22,13 +24,13 @@ pub type Actions {
 
 pub fn main() -> Nil {
   start(
-    domain.initial(),
+    model.initial(),
     domain.update,
-    domain.view,
-    domain.subscriptions,
+    presentation.view,
+    presentation.subscriptions,
     effects.perform,
     Actions(
-      UserEditedQuery,
+      fn(text) { UserEditedQuery(model.DraftQuery(text)) },
       UserSubmittedSearch,
       UserRequestedTime,
       UserSavedDraft,
@@ -36,7 +38,7 @@ pub fn main() -> Nil {
       UserCopiedQuery,
       UserStartedTimer,
       UserToggledClock,
-      ClockTicked,
+      fn(time) { ClockTicked(model.ClockReading(time)) },
     ),
   )
 }
@@ -44,8 +46,8 @@ pub fn main() -> Nil {
 @external(javascript, "./runtime.mjs", "start")
 fn start(
   model: Model,
-  update: fn(Model, Message) -> #(Model, List(Effect)),
-  view: fn(Model) -> View,
+  update: fn(Message) -> Operation,
+  view: fn(Model) -> Screen,
   subscriptions: fn(Model) -> List(Subscription),
   perform: fn(Effect, fn(Message) -> Nil) -> Nil,
   actions: Actions,
