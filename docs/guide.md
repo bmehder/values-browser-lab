@@ -4,7 +4,7 @@ Valuz is the emerging framework; Valuz Browser Lab is the application demonstrat
 
 This guide explains the program as it exists, rather than describing a framework we might eventually build. It is meant to be read slowly, with the source open beside it, and used again when the details are no longer fresh.
 
-You do not need to understand phantom types, promises, or Ramda before starting. Those ideas are introduced where they become useful.
+You do not need to understand phantom types or promises before starting. Those ideas are introduced where they become useful.
 
 ## Reading paths
 
@@ -12,7 +12,7 @@ You do not need to understand phantom types, promises, or Ramda before starting.
 
 **To understand phantom types:** read [the query chapter](#3-phantom-types-without-the-mystery). Open [query.gleam](../src/query.gleam) beside it.
 
-**To understand the JavaScript:** read [the task chapter](#4-reading-the-javascript), then follow the search walkthrough. Open [task.mjs](../src/task.mjs) and [browser_programs.mjs](../src/browser_programs.mjs).
+**To understand the JavaScript:** read [the JavaScript chapter](#4-reading-the-javascript), then follow the search walkthrough. Open [browser.mjs](../src/browser.mjs) and [runtime.mjs](../src/runtime.mjs).
 
 **To return after a few months:** start with the [quick reference](reference.md), then use the troubleshooting section at the end of this guide.
 
@@ -78,15 +78,15 @@ Valuz names the design we are exploring: models and messages, pure operations re
 
 Browser Lab is one application demonstrating that design. Its query rules, Hacker News service, storage key, and interface are application choices.
 
-Ramda and Valibot are choices in **this example's JavaScript adapter**. They are not architectural parts of Valuz, required framework APIs, or conditions for following the design. Another adapter could use other libraries, ordinary JavaScript functions, or a different runtime entirely.
+The current JavaScript adapter uses ordinary functions, async/await, and explicit error handling. The earlier Ramda/Valibot/task experiment is preserved in Git. None of those libraries or abstractions is required by Valuz’s design.
 
 | Layer | What belongs to it |
 |---|---|
 | Valuz's emerging design | Models, messages, operations, effect descriptions, interpretation, and subscriptions |
 | Browser Lab application | Query preparation, search policy, clock and timer behavior, presentation |
-| Current JavaScript implementation | Ramda composition, Valibot schemas, the small task helper, DOM renderer, and browser API bindings |
+| Current JavaScript implementation | Async/await, response validation, DOM rendering, and browser API bindings |
 
-The current repository needs its listed dependencies to build this implementation. Replacing them would require adapting the JavaScript, not changing what the application's messages mean. We have not yet extracted or published a standalone Valuz package.
+The current app has no JavaScript runtime library dependencies; its development tools still build the bundle and documentation. A different adapter would not need to change what the application’s messages mean. We have not yet extracted or published a standalone Valuz package.
 
 ### Where each responsibility lives
 
@@ -98,9 +98,7 @@ The current repository needs its listed dependencies to build this implementatio
 | [operations.gleam](../src/operations.gleam) | What does that operation decide? |
 | [presentation.gleam](../src/presentation.gleam) | What should the screen say, and which ongoing events are wanted? |
 | [effects.gleam](../src/effects.gleam) | Which browser adapter implements this effect? |
-| [task.mjs](../src/task.mjs) | How do we compose deferred work and eventually run it? |
-| [browser_programs.mjs](../src/browser_programs.mjs) | What sequence of browser work and transformations is needed? |
-| [browser.mjs](../src/browser.mjs) | How are JavaScript outcomes connected to Gleam callbacks? |
+| [browser.mjs](../src/browser.mjs) | How do browser operations run, validate their results, and report to Gleam? |
 | [runtime.mjs](../src/runtime.mjs) | Who holds the model, drains messages, renders, and manages listeners? |
 | [main.gleam](../src/main.gleam) | How are all those functions wired together? |
 | [entry.mjs](../entry.mjs) | How does the bundled browser application call `main()`? |
@@ -338,257 +336,130 @@ Keep ordinary variants for states that the running application needs to inspect,
 
 ## 4. Reading the JavaScript
 
-These files explain the JavaScript implementation chosen for Browser Lab, not a mandatory Valuz stack. There are four JavaScript layers with different jobs. Read them in this order:
+The current app uses ordinary JavaScript at its browser boundary. It does not use Ramda, Valibot, or our experimental task abstraction. The earlier implementation is preserved in Git; see [the saved experiment](#the-saved-functional-javascript-experiment).
 
-1. `task.mjs`: the vocabulary for deferred computations.
-2. `browser_programs.mjs`: compositions written in that vocabulary.
-3. `browser.mjs`: the bridge to Gleam values and callbacks.
-4. `runtime.mjs`: the coordinator and renderer.
-
-The coordinator remains deliberately operational. It has a queue, a loop, and mutable references to current runtime resources. Functional design makes this boundary explicit; it does not mean a browser never executes instructions or maintains resources.
+Start with [browser.mjs](../src/browser.mjs), then read [runtime.mjs](../src/runtime.mjs). The first talks to browser APIs. The second coordinates messages and the screen.
 
 ### A small JavaScript reading key
 
 | Expression | Read it as |
 |---|---|
-| `value => expression` | A function taking `value` and returning the expression. |
-| `() => expression` | A function that needs no arguments. The expression waits until it is called. |
-| `first => second => expression` | A function returning another function. Supply the arguments in two calls. |
-| `({ controller }) => ...` | A function that extracts the `controller` property from its argument. |
-| `const { title, url } = story` | Read named properties from an object. |
-| `const [model, effects] = pair` | Read positions from an array; compiled Gleam tuples use this representation. |
-| `object?.property` | Read the property if the object is not null or undefined. |
-| `void expression` | Evaluate it but discard its return value. It does not make work lazy. |
-| `Object.freeze(object)` | Prevent changes to the object's own properties. This is shallow. |
+| `function search(...) { ... }` | A named function; its body runs when called. |
+| `async function search(...)` | A function that returns a promise and may wait with `await`. |
+| `const response = await fetch(url)` | Start the request, then continue this function when its promise succeeds. |
+| `try { ... } catch (error) { ... }` | Handle exceptions or awaited promise rejections from this block. |
+| `finally { clearTimeout(timeout) }` | Clean up after either success or failure. |
+| `if (condition) return value` | Choose an outcome and finish the function early. |
+| `items.map(toStory)` | Produce an array by transforming every item. |
+| `success(value)` | Call the callback provided by Gleam with the successful result. |
+| `error?.name` | Read the property if the value is not null or undefined. |
 
-Names such as `mapTask` are ordinary import aliases. We rename our task `map` on import so it is visibly different from Ramda's collection `map`.
+The functions at this boundary perform real work. Calling `search` starts a request. Calling `save` writes storage. Merely importing their definitions does neither.
 
-### Functions and promises are not the same thing
+### Follow the search function from top to bottom
 
-```js
-const getResponse = () => fetch(url)
-```
+The search function has four phases:
 
-Defining this function does not fetch anything. Calling it does.
+1. Create a fresh abort controller and a timeout for this request.
+2. Fetch, check the HTTP status, read JSON, and decode the stories.
+3. If an operation fails, report its reason through `failure`.
+4. Always clear the timeout; on success, report the stories through `success`.
 
-```js
-const responsePromise = fetch(url)
-```
-
-Here the request has already started by the time we store the returned promise. A promise represents an eventual outcome, but putting an already-started action into a variable does not defer it.
-
-Our task abstraction keeps the function that starts work, rather than starting work during construction:
+Its outline is:
 
 ```js
-const program = task(() => fetch(url))
+export async function search(query, success, failure) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12000)
+  let stories
+  try {
+    // Fetch and decode stories here.
+  } catch (error) {
+    failure(searchFailure(error))
+    return
+  } finally {
+    clearTimeout(timeout)
+  }
+  success(stories)
+}
 ```
 
-`program` is a reusable, deferred description. It is a JavaScript object containing functions. It is not a serialized instruction tree or an already-running promise.
+This is a shortened outline, not an alternative implementation. Read the full function in the source.
 
-Calling `program.run()` starts this execution. Running it again starts another execution; there is no automatic caching. It may produce a different result because the outside world can change.
+`await` pauses this asynchronous function, not the browser's entire event loop. While the request is pending, the application can still receive input, render, or start another search.
 
-### The heart of task.mjs
+`fetch` can return a response with an unsuccessful HTTP status without rejecting its promise. We check `response.ok` ourselves. A bad status throws an error that the surrounding catch handles.
 
-```js
-const run = () => Promise.resolve().then(computation)
-```
+`response.json()` can fail too. Successful JSON parsing does not establish the shape of that data, so `decodeStories` checks it next.
 
-`Promise.resolve()` gives us a fulfilled promise. `.then(computation)` schedules the supplied function to run in a promise continuation. Crucially, this line is inside `run`; it does not execute when we create the task.
+### Validate before entering Gleam
 
-This mechanism also gives us one error channel:
+The boundary accepts a body only if it contains a `hits` array. Each hit must have a string title and object ID. Its optional URL must be a string, null, or absent. Invalid data throws a useful error, which `search` turns into a failure callback.
 
-- A value returned by `computation` becomes the successful result.
-- A promise returned by it is awaited by promise resolution.
-- An exception it throws becomes a rejection.
-- A rejected promise it returns remains a rejection.
+Only then do we construct `Story`, `StoryTitle`, and `StoryUrl` values. `toList(stories)` converts the native JavaScript array to the representation expected by Gleam's `List` type. Those are different runtime representations, despite both being collections.
 
-The task methods return new tasks. They do not call the outer `run` until the new task is executed.
+The browser adapter imports the generated constructors from `model.mjs`. That file is produced from `model.gleam`; it is not a second handwritten model.
 
-### map: change a successful result
+### Select a usable link
 
-```js
-const program = task(() => 3).map(number => number * 2)
-```
+`storyUrl` computes the Hacker News discussion-page fallback first. It then tries to construct a standard `URL` from the provider's address. If the protocol is HTTP or HTTPS, it returns that address. If parsing throws or the protocol is unsuitable, it returns the fallback.
 
-The computation hasn't run yet. When it runs, it produces 3, then the mapping function produces 6.
+No application-level null sentinel is needed. Null or missing URLs may come from the provider; our helper always returns the chosen string. A `javascript:` or `data:` address cannot become a story link.
 
-Use `map` when your function returns an ordinary result, not another task. It can turn raw story data into domain stories. It does not run after a failure. If the mapping function throws, the resulting task fails.
+### Report outcomes, not callback bugs
 
-Our implementation can be read as:
+The successful callback is deliberately outside the operation's try/catch. A bug in the application's success handler is different from a failed network request. We do not want to dispatch a success, catch a bug in handling it, and then dispatch a second, contradictory failure for that same operation.
+
+The same separation is used for storage and clipboard callbacks. The error callback is called from failure handling; errors it throws are not caught again by another branch of that same handler.
+
+`searchFailure` converts a browser abort into a timeout explanation, uses an available error message, or supplies a fallback message. The Gleam callback wraps that string as `FailureReason` and dispatches the typed result message.
+
+### Storage
+
+`save` calls `localStorage.setItem` in a try/catch. If that operation fails, it calls `failure` and returns. Otherwise it calls `success`.
+
+`restore` reads storage first. It then distinguishes a missing value (`null`) from a saved string. A saved empty string is still a saved draft: it can be restored, even though query preparation will later reject it for searching.
+
+These operations use one application-specific storage key. They do not save the whole model or activity history.
+
+### Clipboard
+
+`copy` gets the clipboard API, checks whether `writeText` exists, then awaits writing. Missing support and denied access have different messages. The successful callback is called only after the browser reports completion.
+
+Clipboard support depends on the browser, secure context, and user interaction. A failure is an expected result the app can display, rather than a reason to stop the message loop.
+
+### Time and timers
+
+`now` constructs a `Date` and formats its local time. It is synchronous: calling it returns a reading immediately. The Gleam interpreter turns that reading into `ClockReturnedTime`.
+
+`delay` calls `setTimeout(finished, milliseconds)`. The supplied callback later creates `TimerElapsed`. Starting a new application timer does not cancel the older browser timeout; the domain checks identities and ignores the obsolete completion.
+
+The ongoing live clock is different: the coordinator owns an interval and removes it when the subscription is no longer wanted.
+
+### What remains functional?
+
+The domain is still made of values and pure operations. The browser functions still have explicit inputs and report outcomes through callbacks. `decodeStories` and link selection remain small transformations separated from network coordination.
+
+The difference is how we express execution at this boundary. We now use familiar control flow rather than a second composition vocabulary. This does not change the meaning of the Gleam messages or require us to abandon the idea that programs can be represented as values.
+
+### The saved functional JavaScript experiment
+
+The full earlier project, including its task abstraction, Ramda/Valibot adapter, tests, and documentation, is preserved locally at:
 
 ```text
-Create a new task.
-When run, execute the previous task.
-If it succeeds, transform its result.
+Branch: archive/functional-javascript
+Commit: 29bb212
 ```
 
-### andThen: choose the next computation
+You can inspect a file without switching branches or changing your current work:
 
-Suppose reading a response body requires another asynchronous action. The next step must return a task:
-
-```js
-program.andThen(response => task(() => response.json()))
+```sh
+git show archive/functional-javascript:src/task.mjs
+git show archive/functional-javascript:src/browser_programs.mjs
+git show archive/functional-javascript:docs/guide.md
 ```
 
-`andThen` runs the first task, passes its successful value to the supplied function, and runs the task that function returns.
-
-If we used `map` with the same function, the successful result would be a task object. We would have described the next action but not sequenced its execution.
-
-A useful question is: **does this function return an answer, or another computation that will produce an answer?** Use `map` for the first; use `andThen` for the second.
-
-Neither method continues its success path after a rejection.
-
-### mapError: change the failure explanation
-
-```js
-program.mapError(() => 'This browser could not save the query.')
-```
-
-This replaces a failure reason while leaving the task failed. It is not recovery into success, retrying, or swallowing an error.
-
-The zero-argument arrow is intentional: we do not need the original browser exception to choose this user-facing explanation. Ramda's `always(text)` would also return a constant function, but the arrow keeps this particular intent easy to read.
-
-### succeed and fail
-
-`succeed(value)` constructs a task that will succeed with a known value. `fail(reason)` constructs a task that will fail with a known reason.
-
-Neither executes during construction. These let ordinary decisions return computation values:
-
-```js
-const requireSavedDraft = ifElse(
-  isNil,
-  () => fail('No saved query yet.'),
-  succeed,
-)
-```
-
-If storage returned null or undefined, choose a failure task. Otherwise, choose a successful task carrying the saved text. An empty string is not null: it remains a legitimate saved draft, even though it cannot later be prepared for searching.
-
-### run has two meanings to distinguish
-
-The **method** `program.run()` returns a promise. It is useful for composition and tests, where we can `await` it.
-
-The **exported function** `run(program, success, failure)` is the terminal callback bridge used by Gleam adapters. It runs the task and delivers either outcome to the appropriate callback. It intentionally discards the resulting promise and returns no meaningful value to Gleam.
-
-The bridge uses `.then(success, failure)`. A failure in the program calls `failure`. An exception thrown by the application's success callback is not caught and relabeled as a failed HTTP request. Otherwise one completed interaction could incorrectly dispatch a second result.
-
-This also means application callback bugs are not automatically handled by the task's user-facing error mapping; they can surface as unhandled promise rejections. We want to distinguish our own bugs from failures of the requested browser operation.
-
-### ensuring and using: resources have lifetimes
-
-Search needs an abort controller and a timeout. Those are resources for one execution, not global values shared by every request.
-
-`requestDeadline` is a task value. Each execution creates a fresh controller and schedules a 12-second abort. Merely defining that task starts no timer.
-
-`ensuring(cleanup)` attaches cleanup to both success and failure, using promise `finally`. A throwing or rejecting cleanup can itself fail the computation; cleanup is not assumed infallible in the abstraction. Our search cleanup simply clears a timer.
-
-`using(acquire, use, release)` means:
-
-```text
-Acquire a resource.
-Use it to build and run a dependent program.
-Release it when that program settles.
-```
-
-If acquisition fails, there is no successfully acquired resource to release. If building the dependent program throws, the wrapper still releases the resource.
-
-For search, cleanup covers body reading and validation as well as the initial fetch. We clear the timeout on successful completion, HTTP errors, invalid JSON, rejected response shapes, and network failure.
-
-The helper is not a general cancellation system. We use a specific `AbortController` for the network deadline. Tasks themselves expose no cancel method, and `waitProgram` exposes no way to cancel its timeout.
-
-### Ramda in this adapter: read the composition left to right
-
-`pipe(f, g, h)` returns a new function. Calling it with `x` means `h(g(f(x)))`.
-
-```js
-const toStories = pipe(map(toStory), toList)
-```
-
-First transform each JavaScript story record; then convert the array into a Gleam list. That last conversion matters: a native JavaScript array is not a Gleam `List` just because both are collections.
-
-`flow(value, [f, g, h])` immediately passes an existing value through those functions. In our adapter, that value is usually a task object. Transforming the task object immediately is safe because task composition does not execute the represented work.
-
-This is the crucial distinction:
-
-```text
-flow executes the functions that build the composition now.
-The resulting task executes the browser operations later.
-```
-
-`ifElse(predicate, whenTrue, whenFalse)` returns a function. Both branches must be functions, so we use `() => UnusableUrl` where the result is constant. Only the selected branch is called.
-
-`cond` is an ordered list of predicate/action pairs. `failureMessage` checks an abort error first, then an existing string reason, then an error message, then a fallback. `T` is Ramda's always-true predicate, making the final pair the default.
-
-`prop('href')` is a function that reads an object's `href` property. In the installed Ramda version, `propEq('UsableUrl', 'kind')` tests whether the `kind` property equals `'UsableUrl'`: the expected value comes first.
-
-These helpers do not eliminate decisions from the computation. They let us represent and compose those decisions as functions.
-
-### Synchronous exceptions versus asynchronous rejection
-
-Ramda's `tryCatch` handles exceptions thrown while a function is being called. Our `new URL(value)` expression can throw immediately, so `tryCatch` fits it.
-
-It does not catch a promise rejecting later. A `fetch` can reject asynchronously; our task's promise chain handles that rejection instead.
-
-Using `tryCatch` around a function returning `fetch(...)` would not, by itself, handle later network failure. The two mechanisms cover different kinds of failure.
-
-### Validation and link selection
-
-Valibot's `SearchResponse` is a schema value. It expects an object with a `hits` array, with a string title and object ID for each hit. The external URL may be a string, null, or absent. Unrelated response fields are discarded by the object schema.
-
-`safeParse` returns a success/failure result. `decodeSearchResponse` selects a success task carrying the hits or a failure task with a useful explanation. One malformed hit rejects the response; we do not silently drop it.
-
-For each validated hit, `webUrl` constructs a standard URL and checks its protocol. It produces one of two named JavaScript outcomes:
-
-```js
-UsableUrl(href)
-UnusableUrl
-```
-
-In the source these are small frozen tagged objects. They are not Gleam types and JavaScript does not check exhaustive handling of them. `storyUrl` selects the supplied HTTP(S) address or the Hacker News discussion link.
-
-This is why an unsafe `javascript:` URL cannot become a clickable story link. The fallback also covers missing and malformed URLs. The provider's null is accepted at the data boundary; our own selection uses named outcomes rather than an ambiguous null sentinel.
-
-### Reading the compact search expression
-
-The returned task passes through:
-
-```js
-flow(task(() => fetch(url, options)), [
-  andThen(acceptResponse),
-  andThen(response => task(() => response.json())),
-  andThen(decodeSearchResponse),
-  mapTask(map(storyData)),
-])
-```
-
-This excerpt names `url` and `options` for clarity; the source constructs them from the query and controller.
-
-The values along the way are:
-
-| Step | Successful result |
-|---|---|
-| Fetch | Browser `Response` |
-| Accept HTTP status | The same response, if its status is successful |
-| Read JSON | Parsed but still untrusted JavaScript data |
-| Decode schema | A validated array of hits |
-| Map story data | An array of safe link/title records |
-| Bridge to Gleam | `List(Story)` with named title and URL wrappers |
-
-`mapTask(map(storyData))` has two levels: the outer mapping changes the eventual task result; the inner mapping changes each element of its successful array.
-
-`query => ({ controller }) => ...` likewise has two stages. Supply a query first to obtain a resource-using function. `using` later supplies the controller it acquired for that execution.
-
-### Other browser programs
-
-**Save:** defer `localStorage.setItem`, then map exceptions into a storage failure explanation.
-
-**Restore:** defer reading storage, map access exceptions, then check whether a saved value exists. The order is intentional: “no saved query” remains different from “the browser could not read storage.”
-
-**Copy:** defer obtaining the clipboard object, check that `writeText` exists, then defer writing. Missing support and denied access have distinct explanations. The real browser test confirms copying works from the button interaction in the tested browser; browser policies can differ.
-
-**Wait:** defer constructing a promise whose timer will resolve later. Creating `waitProgram(milliseconds)` does not start the timeout.
-
-**Clock:** `now` is a composed synchronous function because our existing clock protocol expects a reading directly. Defining it does not read the clock; calling it does. It is not a task. Live-clock reads happen in the subscription callback.
+That snapshot is a complete reference for the earlier experiment. It was not pushed as part of this simplification. The current branch continues with the simpler JavaScript boundary and the newer Gleam design intact.
 
 ## 5. Follow one search through the system
 
@@ -636,7 +507,7 @@ The queue's `processing` guard also protects immediate callbacks. Dispatching wh
 
 The `SearchService` branch unwraps the query with `query.to_string`. It supplies the search adapter with success and failure functions that remember request ID 1.
 
-The adapter constructs `searchProgram(text).map(toStories)`, then passes it to `run`. Task execution acquires a fresh deadline, calls fetch, reads the body, validates it, selects safe links, and converts the successful records to Gleam stories.
+The adapter creates a fresh abort controller and deadline, awaits fetch, reads the body, validates it, selects safe links, and converts the successful records to Gleam stories.
 
 The timeout is released when that work settles. On failure, the failure path produces a string explanation which the Gleam callback wraps as `FailureReason`.
 
@@ -703,11 +574,11 @@ This is not a live-reload setup. After source changes, run `npm run build` and r
 npm run check
 ```
 
-This checks Gleam formatting, runs the Gleam and JavaScript tests, and builds the browser bundle. At the time of writing there are nine Gleam tests and thirteen JavaScript tests, including the compiler-contract test. Counts may grow; the commands and test names are the useful reference.
+This checks Gleam formatting, runs the Gleam and JavaScript tests, and builds the browser bundle. At the time of writing there are nine Gleam tests and ten JavaScript tests, including the compiler-contract test. Counts may grow; the commands and test names are the useful reference.
 
 The compiler-contract test builds small probes in an isolated temporary project using already-downloaded dependencies. Compile failure is its expected result for invalid examples. It removes the temporary project afterward.
 
-Pure tests cover draft preservation, normalization, blank submissions, outdated search results, timer restarts, clock subscriptions, and storage outcomes. JavaScript tests cover laziness, error conversion, validation, link safety, storage, clipboard failures, and resource cleanup.
+Pure tests cover draft preservation, normalization, blank submissions, outdated search results, timer restarts, clock subscriptions, and storage outcomes. JavaScript tests cover response validation, link safety, callback delivery, storage, clipboard failures, timeout cleanup, and the query compiler contract.
 
 These are not a replacement for a real browser check of permissions, network availability, and DOM wiring. The local app was also exercised against the real service and browser APIs during development.
 
@@ -720,9 +591,9 @@ These are not a replacement for a real browser check of permissions, network ava
 | Change stale-response policy | `operations.receive_search_result` |
 | Change the timer duration | `operations.start_timer` |
 | Change feedback wording | `presentation.view` |
-| Change HTTP schema or link selection | `browser_programs.mjs` |
+| Change response validation or link selection | `decodeStories` or `storyUrl` in `browser.mjs` |
 | Change how HTTP data becomes Gleam values | `browser.mjs` and the relevant FFI declaration |
-| Change the search timeout | `requestDeadline` in `browser_programs.mjs` |
+| Change the search timeout | `search` in `browser.mjs` |
 | Add an ongoing browser event source | `Subscription`, the pure subscription function, and runtime reconciliation |
 | Add snapshot/replay debugging | Activity representation and recording, while avoiding recursively nested histories |
 | Change the port | The `start` script in `package.json` |
@@ -737,27 +608,23 @@ Keep the semantic decision in the domain, the environmental operation in its ada
 
 **A click produces no activity:** inspect the runtime listener, action wiring in `main.gleam`, and the browser console. The message probably has not reached the domain yet.
 
-**Activity shows the user request but no result:** follow its effect through `perform`, the bridge, and the task. Search may still be pending; its deadline is 12 seconds. Clipboard policies and storage restrictions can produce legitimate failure outcomes.
+**Activity shows the user request but no result:** follow its effect through `perform` and the browser adapter. Search may still be pending; its deadline is 12 seconds. Clipboard policies and storage restrictions can produce legitimate failure outcomes.
 
 **A result arrives but the search stays unchanged:** compare request IDs. Ignoring an obsolete response is intentional.
 
 **A query type mismatch appears after a refactor:** check whether a `Query(Unchecked)` is being used where `Query(Searchable)` is required. Prepare the query and handle the result. Adding a type annotation is not a conversion.
 
-**A function returns a task object where data was expected:** check `map` versus `andThen`. A result-dependent computation generally needs `andThen`.
-
-**Work starts while building a program:** check whether a browser API was called before entering the thunk. `task(fetch(url))` is wrong; `task(() => fetch(url))` defers the call.
+**A browser error causes two result messages:** check whether a success callback has been moved inside the operation's try/catch. Callback bugs should not be relabeled as external-service failure.
 
 ## 8. What to remember
 
 The model describes the current situation. Messages describe observed events and requests. `update` selects a pure operation; applying it produces the next model and requested effects. The runtime retains that model before interpreting those requests.
 
-Phantom query stages preserve a distinction established by preparation. Lazy JavaScript tasks preserve the distinction between describing work and executing it. Both let us move details out of the places where we want to read the program's meaning.
+Phantom query stages preserve a distinction established by preparation. Gleam effect values preserve the distinction between describing browser work and performing it. The straightforward JavaScript adapter implements that work explicitly.
 
 Neither removes execution, runtime validation, or environmental uncertainty. They give those concerns explicit homes.
 
 ## Further reading
 
 - [Hayleigh Thompson: Phantom Types in Gleam](https://hayleigh-dot-dev.github.io/blog/phantom-types-in-gleam/): the technique behind our query stages.
-- [Ramda API reference](https://ramdajs.com/docs/): especially `pipe`, `flow`, `ifElse`, `cond`, and `tryCatch`.
-- [Valibot: parsing data](https://valibot.dev/guides/parse-data/): `safeParse` and schema outcomes.
 - [The original Programming with Values series](https://docklands-ssg.vercel.app/notes/what-is-a-program-really/): the motivation for this experiment.

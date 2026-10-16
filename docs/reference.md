@@ -32,9 +32,7 @@ The operation describes a pure state transition. The effect describes requested 
 | Transition policy | [operations.gleam](../src/operations.gleam) |
 | Screen wording and subscription description | [presentation.gleam](../src/presentation.gleam) |
 | Gleam effect interpreter | [effects.gleam](../src/effects.gleam) |
-| Deferred computations | [task.mjs](../src/task.mjs) |
-| Browser program compositions | [browser_programs.mjs](../src/browser_programs.mjs) |
-| Gleam/JavaScript result bridge | [browser.mjs](../src/browser.mjs) |
+| Browser operations, decoding, and result callbacks | [browser.mjs](../src/browser.mjs) |
 | Queue, current model, rendering, and intervals | [runtime.mjs](../src/runtime.mjs) |
 | Wiring and DOM message constructors | [main.gleam](../src/main.gleam) |
 | Call main from the bundle | [entry.mjs](../entry.mjs) |
@@ -59,32 +57,21 @@ String → from_input → Query(Unchecked)
 - The stage is not stored in the runtime value. The string wrapper still exists.
 - A type annotation cannot validate or promote an unchecked query.
 
-## Implementation choices
+## JavaScript boundary
 
-Ramda and Valibot are libraries used by Browser Lab’s current JavaScript adapter. They are not required parts of Valuz’s architecture. The task helper and DOM renderer are also implementations to study or replace, rather than mandatory framework APIs. The current app still needs its declared dependencies to build.
+The current implementation uses ordinary functions, async/await, if statements, and try/catch/finally. Ramda, Valibot, and the task helper are not in the active app. The earlier complete experiment is saved locally on `archive/functional-javascript` at `29bb212`.
 
-## JavaScript vocabulary
-
-| Name | Meaning |
+| Expression | Meaning |
 |---|---|
-| `task(() => work())` | A deferred, reusable computation value |
-| `program.run()` | Execute and return a promise |
-| `run(program, success, failure)` | Execute and report to Gleam callbacks |
-| `program.map(f)` | Transform its successful result with `f` |
-| `program.andThen(f)` | On success, build and run the task returned by `f` |
-| `program.mapError(f)` | Transform its failure reason; keep it failed |
-| `program.ensuring(cleanup)` | Run cleanup after settlement |
-| `succeed(value)` | Construct a successful task |
-| `fail(reason)` | Construct a failed task |
-| `using(acquire, use, release)` | Acquire, use, and release a resource for one execution |
-| `pipe(f, g)` | Build a function that runs f, then g |
-| `flow(value, [f, g])` | Pass an existing value through f, then g |
-| `ifElse(test, yes, no)` | Build a function choosing between two functions |
-| `cond([[test, action], ...])` | Build ordered conditional selection |
-| `tryCatch(work, recover)` | Convert synchronous exceptions; not later promise rejections |
-| `() => value` | A constant-result function, rather than the result itself |
+| `await fetch(url)` | Start a request and resume this function when it succeeds |
+| `response.ok` | Whether HTTP status indicates success; fetch does not reject all bad statuses |
+| `await response.json()` | Parse a body; validate its shape afterward |
+| `try/catch` | Handle thrown exceptions and awaited promise rejections |
+| `finally` | Clean up on either outcome |
+| `toList(stories)` | Convert a JavaScript array to a Gleam list |
+| `success(value)` / `failure(reason)` | Report an external outcome to Gleam |
 
-`map` is imported from two places. Ramda maps collections; `mapTask` is our alias for changing a task's eventual result.
+Inspect archived files without changing the working tree with `git show archive/functional-javascript:src/task.mjs`.
 
 ## Request/result pairs
 
@@ -104,7 +91,7 @@ Ramda and Valibot are libraries used by Browser Lab’s current JavaScript adapt
 - Ignoring an old result is not cancellation.
 - A restarted timer leaves the older timeout running; its identity makes the old completion irrelevant.
 - Activity stores messages and requested effects, not complete model snapshots.
-- A task is lazy, not cached. Running twice performs the work twice.
+- Calling a browser adapter starts the operation; the Gleam effect value describes it before that call.
 - The query API enforces nonblank, trimmed queries, not general security properties.
 - The current subscription reconciler supports one source.
 - Browser adapters remain the trusted untyped boundary.

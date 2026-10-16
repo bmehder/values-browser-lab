@@ -32,7 +32,7 @@ If you are returning after a few months, start with the quick reference. If phan
 
 ## Architecture and implementation
 
-Valuz describes the model/message/operation/effect relationships. Ramda and Valibot are implementation choices in Browser Lab’s JavaScript adapter, not requirements of that architecture. The current app uses both and needs its declared dependencies to build.
+Valuz describes the model/message/operation/effect relationships. The browser adapter uses ordinary JavaScript with async/await and explicit error handling. It needs no runtime JavaScript libraries. The earlier Ramda/Valibot/task implementation and its docs are saved locally on `archive/functional-javascript` (commit `29bb212`).
 
 Phantom query stages use constructorless labels (`pub type Unchecked`, `pub type Searchable`). The opaque query API controls which values may become searchable.
 

@@ -1,9 +1,10 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises'
 import { Marked } from 'marked'
 import path from 'node:path'
 
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 const slug = text => text.toLowerCase().replace(/<[^>]*>/g, '').replace(/[^\w\s-]/g, '').replace(/\s/g, '-')
+await rm('docs/source', { recursive: true, force: true })
 const sourceLinks = new Set()
 const header = `<header class="topbar"><a class="brand" href="/">Valuz<span> / browser lab</span></a><div class="header-actions"><a class="docs-back" href="/">← Back to the app</a><a class="docs-back" href="https://github.com/bmehder/values-browser-lab">GitHub ↗</a></div></header>`
 const tabs = current => `<nav class="docs-tabs" aria-label="Documentation"><a href="/docs/" ${current === 'guide' ? 'aria-current="page"' : ''}>Full guide</a><a href="/docs/reference.html" ${current === 'reference' ? 'aria-current="page"' : ''}>Quick reference</a></nav>`
