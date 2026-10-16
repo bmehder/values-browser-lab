@@ -2,11 +2,12 @@ import domain
 import effects
 import model.{
   type Effect, type Message, type Model, type Operation, type Subscription,
-  ClockTicked, UserCopiedQuery, UserEditedQuery, UserRequestedTime,
-  UserRestoredDraft, UserSavedDraft, UserStartedTimer, UserSubmittedSearch,
-  UserToggledClock,
+  ClockTicked, UserEditedDraftQuery, UserRequestedDraftRestore,
+  UserRequestedDraftSave, UserRequestedLiveClockToggle, UserRequestedQueryCopy,
+  UserRequestedTime, UserRequestedTimerStart, UserSubmittedSearch,
 }
 import presentation.{type Screen}
+import query
 
 pub type Actions {
   Actions(
@@ -30,14 +31,14 @@ pub fn main() -> Nil {
     presentation.subscriptions,
     effects.perform,
     Actions(
-      fn(text) { UserEditedQuery(model.DraftQuery(text)) },
+      fn(text) { UserEditedDraftQuery(query.from_input(text)) },
       UserSubmittedSearch,
       UserRequestedTime,
-      UserSavedDraft,
-      UserRestoredDraft,
-      UserCopiedQuery,
-      UserStartedTimer,
-      UserToggledClock,
+      UserRequestedDraftSave,
+      UserRequestedDraftRestore,
+      UserRequestedQueryCopy,
+      UserRequestedTimerStart,
+      UserRequestedLiveClockToggle,
       fn(time) { ClockTicked(model.ClockReading(time)) },
     ),
   )

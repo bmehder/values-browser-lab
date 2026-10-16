@@ -1,12 +1,20 @@
 {
-  "name": "values-browser-lab",
+  "name": "valuz-browser-lab",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap",
+    "build": "gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap && npm run build:docs",
     "start": "npm run build && python3 -m http.server 8000 --bind 127.0.0.1",
-    "test": "gleam test",
-    "check": "gleam format --check src test && npm test && npm run build"
+    "test": "gleam test && node --test test/*.test.mjs",
+    "check": "gleam format --check src test && npm test && npm run build",
+    "build:docs": "node scripts/build-docs.mjs"
   },
-  "devDependencies": { "esbuild": "^0.28.2" }
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "marked": "^18.1.1"
+  },
+  "dependencies": {
+    "ramda": "^0.32.0",
+    "valibot": "^1.5.0"
+  }
 }

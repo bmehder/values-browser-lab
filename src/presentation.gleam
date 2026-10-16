@@ -1,20 +1,23 @@
+import query
+
 // Words, booleans encoded for DOM attributes, and display strings belong here.
 import gleam/int
 import gleam/list
 import gleam/string
 import model.{
   type Activity, type Effect, type Message, type Model, type Subscription,
-  Activity, ClipboardFailed, ClipboardFinished, ClipboardReady, ClockRead,
-  ClockReading, ClockReturnedTime, ClockTicked, ClockUnread, CopyText,
-  CopyingQuery, DraftQuery, DraftRestored, DraftSaved, EverySecond,
-  FailureReason, HttpReturnedSearch, LiveClock, ManualClock, QueryCopied,
-  ReadDraft, ReadTime, ReadingDraft, SaveDraft, SavingDraft, SearchFailed,
-  SearchQuery, SearchReady, SearchRequestId, SearchService, SearchSucceeded,
-  Searching, StartTimer, StorageFailed, StorageReady, StorageReturnedDraft,
-  StorageSavedDraft, Story, StoryTitle, StoryUrl, TimerElapsed, TimerFinished,
-  TimerId, TimerReady, TimerRunning, UserCopiedQuery, UserEditedQuery,
-  UserRequestedTime, UserRestoredDraft, UserSavedDraft, UserStartedTimer,
-  UserSubmittedSearch, UserToggledClock,
+  Activity, ClipboardFailed, ClipboardReady, ClipboardReturnedWriteResult,
+  ClockRead, ClockReading, ClockReturnedTime, ClockTicked, ClockUnread, CopyText,
+  CopyingQuery, DraftRestored, DraftSaved, EverySecond, FailureReason,
+  HttpReturnedSearchResult, LiveClock, ManualClock, QueryCopied, ReadDraft,
+  ReadTime, ReadingDraft, SaveDraft, SavingDraft, SearchFailed, SearchReady,
+  SearchRequestId, SearchService, SearchSucceeded, Searching, StartTimer,
+  StorageFailed, StorageReady, StorageReturnedReadResult,
+  StorageReturnedSaveResult, Story, StoryTitle, StoryUrl, TimerElapsed,
+  TimerFinished, TimerId, TimerReady, TimerRunning, UserEditedDraftQuery,
+  UserRequestedDraftRestore, UserRequestedDraftSave,
+  UserRequestedLiveClockToggle, UserRequestedQueryCopy, UserRequestedTime,
+  UserRequestedTimerStart, UserSubmittedSearch,
 }
 
 // The browser receives a presentation projection, not domain state to interpret.
@@ -47,23 +50,27 @@ pub fn subscriptions(model: Model) -> List(Subscription) {
 }
 
 pub fn view(model: Model) -> Screen {
-  let DraftQuery(draft) = model.draft_query
+  let draft = query.to_string(model.draft_query)
   let #(status, query, stories) = case model.search_state {
     SearchReady -> #(
       "Ready when you are",
       "Search Hacker News stories. No account needed.",
       [],
     )
-    Searching(_, SearchQuery(query)) -> #("Searching…", query, [])
-    SearchSucceeded(SearchQuery(query), []) -> #("No stories found", query, [])
-    SearchSucceeded(SearchQuery(query), stories) -> #(
+    Searching(_, prepared) -> #("Searching…", query.to_string(prepared), [])
+    SearchSucceeded(prepared, []) -> #(
+      "No stories found",
+      query.to_string(prepared),
+      [],
+    )
+    SearchSucceeded(prepared, stories) -> #(
       "Stories found",
-      query,
+      query.to_string(prepared),
       stories,
     )
-    SearchFailed(SearchQuery(query), FailureReason(reason)) -> #(
+    SearchFailed(prepared, FailureReason(reason)) -> #(
       "Search failed",
-      query <> " · " <> reason,
+      query.to_string(prepared) <> " · " <> reason,
       [],
     )
   }
@@ -141,21 +148,21 @@ fn effect_name(effect: Effect) -> String {
 
 fn message_name(message: Message) -> String {
   case message {
-    UserEditedQuery(_) -> "UserEditedQuery"
+    UserEditedDraftQuery(_) -> "UserEditedDraftQuery"
     UserSubmittedSearch -> "UserSubmittedSearch"
     UserRequestedTime -> "UserRequestedTime"
-    UserSavedDraft -> "UserSavedDraft"
-    UserRestoredDraft -> "UserRestoredDraft"
-    UserCopiedQuery -> "UserCopiedQuery"
-    UserStartedTimer -> "UserStartedTimer"
-    UserToggledClock -> "UserToggledClock"
-    HttpReturnedSearch(SearchRequestId(id), _) ->
-      "HttpReturnedSearch(#" <> int.to_string(id) <> ")"
+    UserRequestedDraftSave -> "UserRequestedDraftSave"
+    UserRequestedDraftRestore -> "UserRequestedDraftRestore"
+    UserRequestedQueryCopy -> "UserRequestedQueryCopy"
+    UserRequestedTimerStart -> "UserRequestedTimerStart"
+    UserRequestedLiveClockToggle -> "UserRequestedLiveClockToggle"
+    HttpReturnedSearchResult(SearchRequestId(id), _) ->
+      "HttpReturnedSearchResult(#" <> int.to_string(id) <> ")"
     ClockReturnedTime(_) -> "ClockReturnedTime"
     ClockTicked(_) -> "ClockTicked"
-    StorageSavedDraft(_) -> "StorageSavedDraft"
-    StorageReturnedDraft(_) -> "StorageReturnedDraft"
-    ClipboardFinished(_) -> "ClipboardFinished"
+    StorageReturnedSaveResult(_) -> "StorageReturnedSaveResult"
+    StorageReturnedReadResult(_) -> "StorageReturnedReadResult"
+    ClipboardReturnedWriteResult(_) -> "ClipboardReturnedWriteResult"
     TimerElapsed(_) -> "TimerElapsed"
   }
 }

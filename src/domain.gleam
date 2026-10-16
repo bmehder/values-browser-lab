@@ -1,31 +1,34 @@
 import model.{
-  type Message, type Operation, ClipboardFinished, ClockReturnedTime,
-  ClockTicked, HttpReturnedSearch, StorageReturnedDraft, StorageSavedDraft,
-  TimerElapsed, UserCopiedQuery, UserEditedQuery, UserRequestedTime,
-  UserRestoredDraft, UserSavedDraft, UserStartedTimer, UserSubmittedSearch,
-  UserToggledClock,
+  type Message, type Operation, ClipboardReturnedWriteResult, ClockReturnedTime,
+  ClockTicked, HttpReturnedSearchResult, StorageReturnedReadResult,
+  StorageReturnedSaveResult, TimerElapsed, UserEditedDraftQuery,
+  UserRequestedDraftRestore, UserRequestedDraftSave,
+  UserRequestedLiveClockToggle, UserRequestedQueryCopy, UserRequestedTime,
+  UserRequestedTimerStart, UserSubmittedSearch,
 }
 import operations
 
 // Read a message; choose its operation. The coordinator supplies the model later.
 pub fn update(message: Message) -> Operation {
   let operation = case message {
-    UserEditedQuery(query) -> operations.edit_draft(query)
-    UserSubmittedSearch -> operations.submit_search()
+    UserEditedDraftQuery(query) -> operations.edit_draft(query)
+    UserSubmittedSearch -> operations.begin_search()
     UserRequestedTime -> operations.request_time()
-    UserSavedDraft -> operations.save_draft()
-    UserRestoredDraft -> operations.restore_draft()
-    UserCopiedQuery -> operations.copy_query()
-    UserStartedTimer -> operations.start_timer()
-    UserToggledClock -> operations.toggle_live_clock()
-    HttpReturnedSearch(request, result) ->
-      operations.receive_search(request, result)
-    ClockReturnedTime(reading) -> operations.show_time(reading)
+    UserRequestedDraftSave -> operations.save_draft()
+    UserRequestedDraftRestore -> operations.restore_draft()
+    UserRequestedQueryCopy -> operations.copy_query()
+    UserRequestedTimerStart -> operations.start_timer()
+    UserRequestedLiveClockToggle -> operations.toggle_live_clock()
+    HttpReturnedSearchResult(request, result) ->
+      operations.receive_search_result(request, result)
+    ClockReturnedTime(reading) -> operations.record_time(reading)
     ClockTicked(reading) -> operations.receive_clock_tick(reading)
-    StorageSavedDraft(result) -> operations.receive_saved_draft(result)
-    StorageReturnedDraft(result) -> operations.receive_restored_draft(result)
-    ClipboardFinished(result) -> operations.receive_clipboard_result(result)
-    TimerElapsed(timer) -> operations.finish_timer(timer)
+    StorageReturnedSaveResult(result) -> operations.receive_save_result(result)
+    StorageReturnedReadResult(result) ->
+      operations.receive_restore_result(result)
+    ClipboardReturnedWriteResult(result) ->
+      operations.receive_copy_result(result)
+    TimerElapsed(timer) -> operations.record_timer_completion(timer)
   }
   operations.record_activity(operation, message)
 }

@@ -1,11 +1,11 @@
 // Domain vocabulary. Primitive representations are named at their boundaries.
-pub type DraftQuery {
-  DraftQuery(String)
-}
+import query
 
-pub type SearchQuery {
-  SearchQuery(String)
-}
+pub type DraftQuery =
+  query.Query(query.Unchecked)
+
+pub type SearchQuery =
+  query.Query(query.Searchable)
 
 pub type SearchRequestId {
   SearchRequestId(Int)
@@ -99,21 +99,23 @@ pub type Subscription {
   EverySecond
 }
 
+// User messages report observed input or requested work, not successful effects.
+// External result messages describe an attempt that may have succeeded or failed.
 pub type Message {
-  UserEditedQuery(DraftQuery)
+  UserEditedDraftQuery(DraftQuery)
   UserSubmittedSearch
   UserRequestedTime
-  UserSavedDraft
-  UserRestoredDraft
-  UserCopiedQuery
-  UserStartedTimer
-  UserToggledClock
-  HttpReturnedSearch(SearchRequestId, Result(List(Story), FailureReason))
+  UserRequestedDraftSave
+  UserRequestedDraftRestore
+  UserRequestedQueryCopy
+  UserRequestedTimerStart
+  UserRequestedLiveClockToggle
+  HttpReturnedSearchResult(SearchRequestId, Result(List(Story), FailureReason))
   ClockReturnedTime(ClockReading)
   ClockTicked(ClockReading)
-  StorageSavedDraft(Result(Nil, FailureReason))
-  StorageReturnedDraft(Result(DraftQuery, FailureReason))
-  ClipboardFinished(Result(Nil, FailureReason))
+  StorageReturnedSaveResult(Result(Nil, FailureReason))
+  StorageReturnedReadResult(Result(DraftQuery, FailureReason))
+  ClipboardReturnedWriteResult(Result(Nil, FailureReason))
   TimerElapsed(TimerId)
 }
 
@@ -140,7 +142,7 @@ pub type Operation =
 
 pub fn initial() -> Model {
   Model(
-    draft_query: DraftQuery("functional programming"),
+    draft_query: query.from_input("functional programming"),
     search_state: SearchReady,
     next_search_request_id: SearchRequestId(1),
     clock: Clock(display: ClockUnread, mode: ManualClock),

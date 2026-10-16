@@ -1,28 +1,25 @@
 import gleam/list
-import gleam/string
 import model.{
   type ClockReading, type DraftQuery, type FailureReason, type Operation,
   type SearchRequestId, type Story, type TimerId, Activity, ClipboardFailed,
-  Clock, ClockRead, CopyText, CopyingQuery, DraftQuery, DraftRestored,
-  DraftSaved, LiveClock, ManualClock, Milliseconds, Model, QueryCopied,
-  ReadDraft, ReadTime, ReadingDraft, SaveDraft, SavingDraft, SearchFailed,
-  SearchQuery, SearchReady, SearchRequestId, SearchService, SearchSucceeded,
-  Searching, StartTimer, StorageFailed, Timer, TimerFinished, TimerId,
-  TimerRunning,
+  Clock, ClockRead, CopyText, CopyingQuery, DraftRestored, DraftSaved, LiveClock,
+  ManualClock, Milliseconds, Model, QueryCopied, ReadDraft, ReadTime,
+  ReadingDraft, SaveDraft, SavingDraft, SearchFailed, SearchReady,
+  SearchRequestId, SearchService, SearchSucceeded, Searching, StartTimer,
+  StorageFailed, Timer, TimerFinished, TimerId, TimerRunning,
 }
+import query.{EmptyQuery}
 
 pub fn edit_draft(query: DraftQuery) -> Operation {
   fn(model: model.Model) { #(Model(..model, draft_query: query), []) }
 }
 
-pub fn submit_search() -> Operation {
+pub fn begin_search() -> Operation {
   fn(model: model.Model) {
-    let DraftQuery(text) = model.draft_query
     let SearchRequestId(next) = model.next_search_request_id
-    case string.trim(text) {
-      "" -> #(Model(..model, search_state: SearchReady), [])
-      text -> {
-        let query = SearchQuery(text)
+    case query.prepare(model.draft_query) {
+      Error(EmptyQuery) -> #(Model(..model, search_state: SearchReady), [])
+      Ok(query) -> {
         #(
           Model(
             ..model,
@@ -36,7 +33,7 @@ pub fn submit_search() -> Operation {
   }
 }
 
-pub fn receive_search(
+pub fn receive_search_result(
   request: SearchRequestId,
   result: Result(List(Story), FailureReason),
 ) -> Operation {
@@ -58,7 +55,7 @@ pub fn request_time() -> Operation {
   fn(model: model.Model) { #(model, [ReadTime]) }
 }
 
-pub fn show_time(reading: ClockReading) -> Operation {
+pub fn record_time(reading: ClockReading) -> Operation {
   fn(model: model.Model) {
     #(
       Model(..model, clock: Clock(..model.clock, display: ClockRead(reading))),
@@ -80,7 +77,7 @@ pub fn toggle_live_clock() -> Operation {
 pub fn receive_clock_tick(reading: ClockReading) -> Operation {
   fn(model: model.Model) {
     case model.clock.mode {
-      LiveClock -> show_time(reading)(model)
+      LiveClock -> record_time(reading)(model)
       ManualClock -> #(model, [])
     }
   }
@@ -98,7 +95,7 @@ pub fn restore_draft() -> Operation {
   }
 }
 
-pub fn receive_saved_draft(result: Result(Nil, FailureReason)) -> Operation {
+pub fn receive_save_result(result: Result(Nil, FailureReason)) -> Operation {
   fn(model: model.Model) {
     let state = case result {
       Ok(_) -> DraftSaved
@@ -108,7 +105,7 @@ pub fn receive_saved_draft(result: Result(Nil, FailureReason)) -> Operation {
   }
 }
 
-pub fn receive_restored_draft(
+pub fn receive_restore_result(
   result: Result(DraftQuery, FailureReason),
 ) -> Operation {
   fn(model: model.Model) {
@@ -133,9 +130,7 @@ pub fn copy_query() -> Operation {
   }
 }
 
-pub fn receive_clipboard_result(
-  result: Result(Nil, FailureReason),
-) -> Operation {
+pub fn receive_copy_result(result: Result(Nil, FailureReason)) -> Operation {
   fn(model: model.Model) {
     let state = case result {
       Ok(_) -> QueryCopied
@@ -159,7 +154,7 @@ pub fn start_timer() -> Operation {
   }
 }
 
-pub fn finish_timer(id: TimerId) -> Operation {
+pub fn record_timer_completion(id: TimerId) -> Operation {
   fn(model: model.Model) {
     case model.timer.state {
       TimerRunning(active) if active == id -> #(

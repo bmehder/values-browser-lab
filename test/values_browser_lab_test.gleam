@@ -1,14 +1,15 @@
 import domain
 import gleeunit
 import model.{
-  ClockRead, ClockReading, ClockTicked, DraftQuery, DraftRestored, EverySecond,
-  FailureReason, HttpReturnedSearch, LiveClock, ManualClock, Milliseconds, Model,
-  SearchQuery, SearchReady, SearchRequestId, SearchService, SearchSucceeded,
-  Searching, StartTimer, StorageFailed, StorageReturnedDraft, TimerElapsed,
-  TimerFinished, TimerId, TimerRunning, UserEditedQuery, UserStartedTimer,
-  UserSubmittedSearch, UserToggledClock,
+  ClockRead, ClockReading, ClockTicked, DraftRestored, EverySecond,
+  FailureReason, HttpReturnedSearchResult, LiveClock, ManualClock, Milliseconds,
+  Model, SearchReady, SearchRequestId, SearchService, SearchSucceeded, Searching,
+  StartTimer, StorageFailed, StorageReturnedReadResult, TimerElapsed,
+  TimerFinished, TimerId, TimerRunning, UserEditedDraftQuery,
+  UserRequestedLiveClockToggle, UserRequestedTimerStart, UserSubmittedSearch,
 }
 import presentation
+import query.{EmptyQuery}
 
 pub fn main() {
   gleeunit.main()
@@ -21,56 +22,79 @@ fn apply(
   domain.update(message)(current)
 }
 
+fn prepared(text: String) -> query.Query(query.Searchable) {
+  let assert Ok(query) = query.prepare(query.from_input(text))
+  query
+}
+
+pub fn query_preparation_normalizes_without_changing_the_draft_test() {
+  let draft = query.from_input("  values  ")
+  let assert Ok(searchable) = query.prepare(draft)
+  assert query.to_string(draft) == "  values  "
+  assert query.to_string(searchable) == "values"
+  let #(edited, _) = apply(model.initial(), UserEditedDraftQuery(draft))
+  let assert #(next, [SearchService(SearchRequestId(1), sent)]) =
+    apply(edited, UserSubmittedSearch)
+  assert sent == searchable
+  assert next.draft_query == draft
+  assert next.search_state == Searching(SearchRequestId(1), searchable)
+}
+
+pub fn blank_queries_cannot_be_prepared_test() {
+  assert query.prepare(query.from_input("")) == Error(EmptyQuery)
+  assert query.prepare(query.from_input(" \n\t ")) == Error(EmptyQuery)
+}
+
 pub fn operation_is_reusable_without_captured_model_test() {
   let submit = domain.update(UserSubmittedSearch)
   let #(one, _) = submit(model.initial())
   let #(two, _) =
-    submit(Model(..model.initial(), draft_query: DraftQuery("types")))
-  let assert Searching(
-    SearchRequestId(1),
-    SearchQuery("functional programming"),
-  ) = one.search_state
-  let assert Searching(SearchRequestId(1), SearchQuery("types")) =
-    two.search_state
+    submit(Model(..model.initial(), draft_query: query.from_input("types")))
+  assert one.search_state
+    == Searching(SearchRequestId(1), prepared("functional programming"))
+  assert two.search_state == Searching(SearchRequestId(1), prepared("types"))
 }
 
 pub fn stale_search_does_not_replace_current_results_test() {
   let #(pending_one, _) = apply(model.initial(), UserSubmittedSearch)
   let assert #(edited, []) =
-    apply(pending_one, UserEditedQuery(DraftQuery("types")))
-  let assert #(
-    pending_two,
-    [SearchService(SearchRequestId(2), SearchQuery("types"))],
-  ) = apply(edited, UserSubmittedSearch)
+    apply(pending_one, UserEditedDraftQuery(query.from_input("types")))
+  let assert #(pending_two, [SearchService(SearchRequestId(2), sent)]) =
+    apply(edited, UserSubmittedSearch)
+  assert query.to_string(sent) == "types"
   let assert #(old, []) =
-    apply(pending_two, HttpReturnedSearch(SearchRequestId(1), Ok([])))
-  let assert Searching(SearchRequestId(2), SearchQuery("types")) =
-    old.search_state
+    apply(pending_two, HttpReturnedSearchResult(SearchRequestId(1), Ok([])))
+  assert old.search_state == Searching(SearchRequestId(2), prepared("types"))
   let assert #(new, []) =
-    apply(old, HttpReturnedSearch(SearchRequestId(2), Ok([])))
-  assert new.search_state == SearchSucceeded(SearchQuery("types"), [])
+    apply(old, HttpReturnedSearchResult(SearchRequestId(2), Ok([])))
+  assert new.search_state == SearchSucceeded(prepared("types"), [])
   let assert #(late, []) =
     apply(
       new,
-      HttpReturnedSearch(SearchRequestId(1), Error(FailureReason("offline"))),
+      HttpReturnedSearchResult(
+        SearchRequestId(1),
+        Error(FailureReason("offline")),
+      ),
     )
   assert late.search_state == new.search_state
 }
 
 pub fn blank_submission_supersedes_pending_search_test() {
   let #(pending, _) = apply(model.initial(), UserSubmittedSearch)
-  let assert #(blank, []) = apply(pending, UserEditedQuery(DraftQuery("   ")))
+  let assert #(blank, []) =
+    apply(pending, UserEditedDraftQuery(query.from_input("   ")))
   let assert #(idle, []) = apply(blank, UserSubmittedSearch)
   let assert #(late, []) =
-    apply(idle, HttpReturnedSearch(SearchRequestId(1), Ok([])))
+    apply(idle, HttpReturnedSearchResult(SearchRequestId(1), Ok([])))
   assert late.search_state == SearchReady
+  assert idle.next_search_request_id == pending.next_search_request_id
 }
 
 pub fn restarted_timer_ignores_previous_completion_test() {
   let assert #(one, [StartTimer(TimerId(1), Milliseconds(3000))]) =
-    apply(model.initial(), UserStartedTimer)
+    apply(model.initial(), UserRequestedTimerStart)
   let assert #(two, [StartTimer(TimerId(2), Milliseconds(3000))]) =
-    apply(one, UserStartedTimer)
+    apply(one, UserRequestedTimerStart)
   let assert #(stale, []) = apply(two, TimerElapsed(TimerId(1)))
   assert stale.timer.state == TimerRunning(TimerId(2))
   let assert #(done, []) = apply(stale, TimerElapsed(TimerId(2)))
@@ -81,11 +105,11 @@ pub fn restarted_timer_ignores_previous_completion_test() {
 pub fn live_clock_subscription_and_late_tick_test() {
   let initial = model.initial()
   assert presentation.subscriptions(initial) == []
-  let assert #(on, []) = apply(initial, UserToggledClock)
+  let assert #(on, []) = apply(initial, UserRequestedLiveClockToggle)
   assert on.clock.mode == LiveClock
   assert presentation.subscriptions(on) == [EverySecond]
   let assert #(ticked, []) = apply(on, ClockTicked(ClockReading("12:34:56")))
-  let assert #(off, []) = apply(ticked, UserToggledClock)
+  let assert #(off, []) = apply(ticked, UserRequestedLiveClockToggle)
   assert off.clock.mode == ManualClock
   assert presentation.subscriptions(off) == []
   let assert #(late, []) = apply(off, ClockTicked(ClockReading("12:34:57")))
@@ -95,20 +119,23 @@ pub fn live_clock_subscription_and_late_tick_test() {
 pub fn storage_failure_preserves_draft_test() {
   let initial = model.initial()
   let assert #(failed, []) =
-    apply(initial, StorageReturnedDraft(Error(FailureReason("blocked"))))
+    apply(initial, StorageReturnedReadResult(Error(FailureReason("blocked"))))
   assert failed.draft_query == initial.draft_query
   assert failed.storage_state == StorageFailed(FailureReason("blocked"))
   let assert #(restored, []) =
-    apply(initial, StorageReturnedDraft(Ok(DraftQuery("saved query"))))
-  assert restored.draft_query == DraftQuery("saved query")
+    apply(
+      initial,
+      StorageReturnedReadResult(Ok(query.from_input("  saved query  "))),
+    )
+  assert query.to_string(restored.draft_query) == "  saved query  "
   assert restored.storage_state == DraftRestored
 }
 
 pub fn editing_draft_preserves_submitted_query_test() {
   let #(pending, _) = apply(model.initial(), UserSubmittedSearch)
   let assert #(edited, []) =
-    apply(pending, UserEditedQuery(DraftQuery("something else")))
-  let assert Searching(_, submitted) = edited.search_state
-  assert submitted == SearchQuery("functional programming")
+    apply(pending, UserEditedDraftQuery(query.from_input("something else")))
+  assert edited.search_state
+    == Searching(SearchRequestId(1), prepared("functional programming"))
   assert presentation.view(edited).draft == "something else"
 }
