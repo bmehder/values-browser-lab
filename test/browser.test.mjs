@@ -19,7 +19,7 @@ function callbacks() {
 test('external data is validated before creating Gleam stories', () => {
   for (const body of [null, {}, { hits: [null] }, { hits: [{ title: 42, objectID: '1' }] },
     { hits: [{ title: 'Hi', objectID: '1', url: 42 }] }])
-    assert.throws(() => decodeStories(body), /unexpected response/)
+    assert.throws(() => decodeStories(body), { name: "ValiError" })
   const stories = decodeStories({ hits: [{ title: 'Hi', objectID: '1' }] }).toArray()
   assert.equal(stories[0].title[0], 'Hi')
 })
@@ -121,4 +121,33 @@ test('application callback bugs do not trigger a second failure callback', async
   t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ hits: [] }) }))
   await assert.rejects(search('values', broken, () => failures++), /application bug/)
   assert.equal(failures, 0)
+})
+
+test('malformed service data keeps the application error message', async t => {
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ hits: [null] }) }))
+  const result = callbacks()
+  await search('values', result.success, result.failure)
+  assert.deepEqual(result.failures, ['The service returned an unexpected response.'])
+  assert.deepEqual(result.successes, [])
+})
+
+test('clipboard getter and synchronous write exceptions report denied access', async t => {
+  setGlobal(t, 'navigator', { get clipboard() { throw new Error('blocked') } })
+  const getter = callbacks()
+  await copy('values', getter.success, getter.failure)
+  assert.deepEqual(getter.failures, ['Clipboard access was denied.'])
+  setGlobal(t, 'navigator', { clipboard: { writeText() { throw new Error('blocked') } } })
+  const write = callbacks()
+  await copy('values', write.success, write.failure)
+  assert.deepEqual(write.failures, ['Clipboard access was denied.'])
+})
+
+test('restore and clipboard callback bugs stay outside operation failure handling', async t => {
+  setGlobal(t, 'localStorage', { getItem: () => 'values' })
+  setGlobal(t, 'navigator', { clipboard: { writeText: async () => {} } })
+  const failures = []
+  const broken = () => { throw new Error('application bug') }
+  assert.throws(() => restore(broken, reason => failures.push(reason)), /application bug/)
+  await assert.rejects(copy('values', broken, reason => failures.push(reason)), /application bug/)
+  assert.deepEqual(failures, [])
 })

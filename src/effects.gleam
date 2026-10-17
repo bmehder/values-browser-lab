@@ -14,35 +14,72 @@ pub fn perform(effect: Effect, dispatch: fn(Message) -> Nil) -> Nil {
     SearchService(id, prepared_query) ->
       search(
         query.to_string(prepared_query),
-        fn(stories) { dispatch(HttpReturnedSearchResult(id, Ok(stories))) },
+        fn(stories) {
+          stories
+          |> Ok
+          |> HttpReturnedSearchResult(id, _)
+          |> dispatch
+        },
         fn(reason) {
-          dispatch(HttpReturnedSearchResult(id, Error(FailureReason(reason))))
+          reason
+          |> FailureReason
+          |> Error
+          |> HttpReturnedSearchResult(id, _)
+          |> dispatch
         },
       )
-    ReadTime -> dispatch(ClockReturnedTime(ClockReading(now())))
+    ReadTime ->
+      now()
+      |> ClockReading
+      |> ClockReturnedTime
+      |> dispatch
     SaveDraft(draft) ->
       save(
         query.to_string(draft),
-        fn() { dispatch(StorageReturnedSaveResult(Ok(Nil))) },
+        fn() {
+          Ok(Nil)
+          |> StorageReturnedSaveResult
+          |> dispatch
+        },
         fn(reason) {
-          dispatch(StorageReturnedSaveResult(Error(FailureReason(reason))))
+          reason
+          |> FailureReason
+          |> Error
+          |> StorageReturnedSaveResult
+          |> dispatch
         },
       )
     ReadDraft ->
       restore(
         fn(text) {
-          dispatch(StorageReturnedReadResult(Ok(query.from_input(text))))
+          text
+          |> query.from_input
+          |> Ok
+          |> StorageReturnedReadResult
+          |> dispatch
         },
         fn(reason) {
-          dispatch(StorageReturnedReadResult(Error(FailureReason(reason))))
+          reason
+          |> FailureReason
+          |> Error
+          |> StorageReturnedReadResult
+          |> dispatch
         },
       )
     CopyText(draft) ->
       copy(
         query.to_string(draft),
-        fn() { dispatch(ClipboardReturnedWriteResult(Ok(Nil))) },
+        fn() {
+          Ok(Nil)
+          |> ClipboardReturnedWriteResult
+          |> dispatch
+        },
         fn(reason) {
-          dispatch(ClipboardReturnedWriteResult(Error(FailureReason(reason))))
+          reason
+          |> FailureReason
+          |> Error
+          |> ClipboardReturnedWriteResult
+          |> dispatch
         },
       )
     StartTimer(id, Milliseconds(milliseconds)) ->

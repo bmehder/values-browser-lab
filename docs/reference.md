@@ -59,15 +59,15 @@ String → from_input → Query(Unchecked)
 
 ## JavaScript boundary
 
-The current implementation uses ordinary functions, async/await, if statements, and try/catch/finally. Ramda, Valibot, and the task helper are not in the active app. The earlier complete experiment is saved locally on `archive/functional-javascript` at `29bb212`.
+The current implementation uses expression-bodied functions, native promises, and small Ramda compositions. Valibot validates external response data. Ramda supplies `pipe`, `map`, `ifElse`, `cond`, and synchronous `tryCatch` in small helpers. The task helper remains archived; search and clipboard use promise chains; storage remains synchronous. The earlier complete experiment is saved locally on `archive/functional-javascript` at `29bb212`.
 
 | Expression | Meaning |
 |---|---|
-| `await fetch(url)` | Start a request and resume this function when it succeeds |
+| `fetch(url).then(next)` | Start a request and pass its successful result to next |
 | `response.ok` | Whether HTTP status indicates success; fetch does not reject all bad statuses |
-| `await response.json()` | Parse a body; validate its shape afterward |
-| `try/catch` | Handle thrown exceptions and awaited promise rejections |
-| `finally` | Clean up on either outcome |
+| `response.json()` | Parse a body; validate its shape afterward |
+| `tryCatch` | Handle synchronous exceptions from the wrapped operation |
+| `.finally(cleanup)` | Clean up on either outcome |
 | `toList(stories)` | Convert a JavaScript array to a Gleam list |
 | `success(value)` / `failure(reason)` | Report an external outcome to Gleam |
 

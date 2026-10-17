@@ -1,5 +1,7 @@
 # Understanding Valuz Browser Lab
 
+**Start with the big picture:** [The Value of Values](talk.md) is a 30-minute conference-talk script with seven static diagrams and a journey through one search.
+
 Valuz is the emerging framework; Valuz Browser Lab is the application demonstrating it. Its guiding idea is: **Describe what happens. Compose what happens next.**
 
 This guide explains the program as it exists, rather than describing a framework we might eventually build. It is meant to be read slowly, with the source open beside it, and used again when the details are no longer fresh.
@@ -78,13 +80,13 @@ Valuz names the design we are exploring: models and messages, pure operations re
 
 Browser Lab is one application demonstrating that design. Its query rules, Hacker News service, storage key, and interface are application choices.
 
-The current JavaScript adapter uses ordinary functions, async/await, and explicit error handling. The earlier Ramda/Valibot/task experiment is preserved in Git. None of those libraries or abstractions is required by Valuz’s design.
+The current JavaScript adapter uses expression-bodied functions, native promises, and explicit error handling. The earlier Ramda/Valibot/task experiment is preserved in Git. None of those libraries or abstractions is required by Valuz’s design.
 
 | Layer | What belongs to it |
 |---|---|
 | Valuz's emerging design | Models, messages, operations, effect descriptions, interpretation, and subscriptions |
 | Browser Lab application | Query preparation, search policy, clock and timer behavior, presentation |
-| Current JavaScript implementation | Async/await, response validation, DOM rendering, and browser API bindings |
+| Current JavaScript implementation | Async/await, Valibot response validation, DOM rendering, and browser API bindings |
 
 The current app has no JavaScript runtime library dependencies; its development tools still build the bundle and documentation. A different adapter would not need to change what the application’s messages mean. We have not yet extracted or published a standalone Valuz package.
 
@@ -336,7 +338,7 @@ Keep ordinary variants for states that the running application needs to inspect,
 
 ## 4. Reading the JavaScript
 
-The current app uses ordinary JavaScript at its browser boundary. It does not use Ramda, Valibot, or our experimental task abstraction. The earlier implementation is preserved in Git; see [the saved experiment](#the-saved-functional-javascript-experiment).
+The current app uses ordinary JavaScript at its browser boundary. Valibot handles response validation. Ramda supplies a few small helpers for composition and URL selection. Browser operations use promise chains and small synchronous helpers; there is no task abstraction or run function. The earlier implementation is preserved in Git; see [the saved experiment](#the-saved-functional-javascript-experiment).
 
 Start with [browser.mjs](../src/browser.mjs), then read [runtime.mjs](../src/runtime.mjs). The first talks to browser APIs. The second coordinates messages and the screen.
 
@@ -344,55 +346,47 @@ Start with [browser.mjs](../src/browser.mjs), then read [runtime.mjs](../src/run
 
 | Expression | Read it as |
 |---|---|
-| `function search(...) { ... }` | A named function; its body runs when called. |
-| `async function search(...)` | A function that returns a promise and may wait with `await`. |
-| `const response = await fetch(url)` | Start the request, then continue this function when its promise succeeds. |
-| `try { ... } catch (error) { ... }` | Handle exceptions or awaited promise rejections from this block. |
-| `finally { clearTimeout(timeout) }` | Clean up after either success or failure. |
-| `if (condition) return value` | Choose an outcome and finish the function early. |
-| `items.map(toStory)` | Produce an array by transforming every item. |
-| `success(value)` | Call the callback provided by Gleam with the successful result. |
+| `const search = (...) => expression` | A named function whose result is its expression. |
+| `pipe(first, second)` | Pass the result of the first function to the second. |
+| `ifElse(test, yes, no)` | Choose a function based on the test. |
+| `cond([[test, action], ...])` | Use the action for the first matching test. |
+| `tryCatch(operation, fallback)` | Catch synchronous exceptions from that operation. |
+| `.then(next)` | Continue when a promise succeeds. |
+| `.then(success, failure)` | Handle the two outcomes with sibling callbacks. |
+| `.finally(cleanup)` | Clean up after either outcome. |
+| `map(toStory)` | Transform each item in a collection. |
 | `error?.name` | Read the property if the value is not null or undefined. |
 
 The functions at this boundary perform real work. Calling `search` starts a request. Calling `save` writes storage. Merely importing their definitions does neither.
 
 ### Follow the search function from top to bottom
 
-The search function has four phases:
-
-1. Create a fresh abort controller and a timeout for this request.
-2. Fetch, check the HTTP status, read JSON, and decode the stories.
-3. If an operation fails, report its reason through `failure`.
-4. Always clear the timeout; on success, report the stories through `success`.
-
-Its outline is:
+`search` composes a promise chain and reports its outcome:
 
 ```js
-export async function search(query, success, failure) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 12000)
-  let stories
-  try {
-    // Fetch and decode stories here.
-  } catch (error) {
-    failure(searchFailure(error))
-    return
-  } finally {
-    clearTimeout(timeout)
-  }
-  success(stories)
-}
+export const search = (query, success, failure) =>
+  fetchStories(query, new AbortController())
+    .then(success, pipe(searchFailure, failure))
 ```
 
-This is a shortened outline, not an alternative implementation. Read the full function in the source.
+`fetchStories` creates a timeout for this request, then follows these steps:
 
-`await` pauses this asynchronous function, not the browser's entire event loop. While the request is pending, the application can still receive input, render, or start another search.
+1. Start fetch with the query and abort signal.
+2. Check the HTTP status and read the response JSON.
+3. Validate and convert the stories with `decodeStories`.
+4. Clear the timeout with `.finally()`, whichever outcome occurred.
 
-`fetch` can return a response with an unsuccessful HTTP status without rejecting its promise. We check `response.ok` ourselves. A bad status throws an error that the surrounding catch handles.
+Each `.then()` passes its successful value to the next function. A thrown error or rejected promise skips subsequent success handlers. The browser remains free to process input while the request is pending.
 
-`response.json()` can fail too. Successful JSON parsing does not establish the shape of that data, so `decodeStories` checks it next.
+`readSearchResponse` uses `ifElse` to choose between reading JSON and rejecting with an HTTP error. Fetch itself does not reject merely because the response has an unsuccessful HTTP status.
+
+The chain starts with `Promise.resolve().then(...)`, so even a synchronous exception while starting fetch becomes a rejection and passes through cleanup. The timeout is a default parameter in `fetchStories`, evaluated for each call with that request’s fresh controller.
+
+The final `.then(success, pipe(searchFailure, failure))` has sibling success and failure handlers. The failure handler handles a failed request; it does not catch exceptions thrown by its sibling success callback.
 
 ### Validate before entering Gleam
+
+`SearchResponse` is a Valibot schema: a value describing the expected data shape. `decodeStories` pipes its input through `v.parse(SearchResponse, body)`, selects the validated hits, and converts them to Gleam stories. Invalid input throws a Valibot error; `searchFailure` gives it the application’s stable response-error message.
 
 The boundary accepts a body only if it contains a `hits` array. Each hit must have a string title and object ID. Its optional URL must be a string, null, or absent. Invalid data throws a useful error, which `search` turns into a failure callback.
 
@@ -402,13 +396,17 @@ The browser adapter imports the generated constructors from `model.mjs`. That fi
 
 ### Select a usable link
 
-`storyUrl` computes the Hacker News discussion-page fallback first. It then tries to construct a standard `URL` from the provider's address. If the protocol is HTTP or HTTPS, it returns that address. If parsing throws or the protocol is unsuitable, it returns the fallback.
+`storyUrl` uses Ramda’s `tryCatch` around synchronous URL parsing. `ifElse` selects the HTTP/HTTPS address or the discussion-page fallback. If parsing throws, the catch function receives the error and original hit, so it can choose the same fallback. This helper always returns a string.
+
+`toStories` uses `pipe` to read left to right: map each validated hit into a Gleam `Story`, then convert the resulting array with `toList`. The mapping function uses ordinary named fields rather than a chain of property helpers.
+
+These uses are deliberately local. Ramda’s `tryCatch` handles synchronous exceptions; asynchronous browser operations use promise chains with explicit failure handlers. Ramda and Valibot are implementation choices, not requirements of Valuz. See the [Ramda documentation](https://ramdajs.com/docs/) for the helper definitions.
 
 No application-level null sentinel is needed. Null or missing URLs may come from the provider; our helper always returns the chosen string. A `javascript:` or `data:` address cannot become a story link.
 
 ### Report outcomes, not callback bugs
 
-The successful callback is deliberately outside the operation's try/catch. A bug in the application's success handler is different from a failed network request. We do not want to dispatch a success, catch a bug in handling it, and then dispatch a second, contradictory failure for that same operation.
+For search and clipboard, success and failure are sibling promise handlers. Storage callbacks run after the synchronous `tryCatch` helpers have finished. A bug in the application's success handler is different from a failed network request. We do not want to dispatch a success, catch a bug in handling it, and then dispatch a second, contradictory failure for that same operation.
 
 The same separation is used for storage and clipboard callbacks. The error callback is called from failure handling; errors it throws are not caught again by another branch of that same handler.
 
@@ -416,15 +414,15 @@ The same separation is used for storage and clipboard callbacks. The error callb
 
 ### Storage
 
-`save` calls `localStorage.setItem` in a try/catch. If that operation fails, it calls `failure` and returns. Otherwise it calls `success`.
+`writeDraft` uses `tryCatch` to report whether the synchronous write succeeded. `save` uses `ifElse` to choose the success or failure callback afterward. Callback exceptions are outside the write helper’s catch boundary.
 
-`restore` reads storage first. It then distinguishes a missing value (`null`) from a saved string. A saved empty string is still a saved draft: it can be restored, even though query preparation will later reject it for searching.
+`readDraft` captures a successful read as `{ ok: true, text }` and an exception as `{ ok: false }`. `restore` uses `cond` to choose the read-failure, missing-draft, or success callback. It distinguishes a missing value (`null`) from a saved string. A saved empty string is still a saved draft: it can be restored, even though query preparation will later reject it for searching.
 
 These operations use one application-specific storage key. They do not save the whole model or activity history.
 
 ### Clipboard
 
-`copy` gets the clipboard API, checks whether `writeText` exists, then awaits writing. Missing support and denied access have different messages. The successful callback is called only after the browser reports completion.
+`copy` gets the clipboard API, checks whether `writeText` exists, then chains the write promise. Missing support and denied access have different messages. The successful callback is called only after the browser reports completion.
 
 Clipboard support depends on the browser, secure context, and user interaction. A failure is an expected result the app can display, rather than a reason to stop the message loop.
 
@@ -440,7 +438,7 @@ The ongoing live clock is different: the coordinator owns an interval and remove
 
 The domain is still made of values and pure operations. The browser functions still have explicit inputs and report outcomes through callbacks. `decodeStories` and link selection remain small transformations separated from network coordination.
 
-The difference is how we express execution at this boundary. We now use familiar control flow rather than a second composition vocabulary. This does not change the meaning of the Gleam messages or require us to abandon the idea that programs can be represented as values.
+The difference is how we express execution at this boundary. We use expression-bodied functions, selected Ramda helpers, and native promises without a custom Task or run abstraction. This does not change the meaning of the Gleam messages or require us to abandon the idea that programs can be represented as values.
 
 ### The saved functional JavaScript experiment
 
@@ -574,7 +572,7 @@ This is not a live-reload setup. After source changes, run `npm run build` and r
 npm run check
 ```
 
-This checks Gleam formatting, runs the Gleam and JavaScript tests, and builds the browser bundle. At the time of writing there are nine Gleam tests and ten JavaScript tests, including the compiler-contract test. Counts may grow; the commands and test names are the useful reference.
+This checks Gleam formatting, runs the Gleam and JavaScript tests, and builds the browser bundle. At the time of writing there are nine Gleam tests and thirteen JavaScript tests, including the compiler-contract test. Counts may grow; the commands and test names are the useful reference.
 
 The compiler-contract test builds small probes in an isolated temporary project using already-downloaded dependencies. Compile failure is its expected result for invalid examples. It removes the temporary project afterward.
 

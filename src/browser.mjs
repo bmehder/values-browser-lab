@@ -1,114 +1,130 @@
 // Ordinary JavaScript at the browser boundary. Application decisions stay in Gleam.
+import * as v from 'valibot'
+import { cond, ifElse, map, pipe, T, tryCatch } from 'ramda'
 import { Story, StoryTitle, StoryUrl } from './model.mjs'
 import { toList } from '../gleam_stdlib/gleam.mjs'
 
 const storageKey = 'values-browser-lab:draft'
 
-export function now() {
-  return new Date().toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  })
-}
+export const now = () =>
+	new Date().toLocaleTimeString([], {
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+	})
 
-function storyUrl(hit) {
-  const fallback = `https://news.ycombinator.com/item?id=${encodeURIComponent(hit.objectID)}`
-  try {
-    const url = new URL(hit.url)
-    if (url.protocol === 'https:' || url.protocol === 'http:') return url.href
-  } catch {
-    // Missing or malformed links use the story's discussion page.
-  }
-  return fallback
-}
+const discussionUrl = hit =>
+	`https://news.ycombinator.com/item?id=${encodeURIComponent(hit.objectID)}`
 
-// JSON is untrusted until checked. Return actual Gleam values, not lookalike arrays.
-export function decodeStories(body) {
-  if (!body || !Array.isArray(body.hits))
-    throw new Error('The service returned an unexpected response.')
+// Both malformed URLs and non-web protocols use the discussion page.
+const storyUrl = tryCatch(
+	hit => ifElse(
+		url => url.protocol === 'https:' || url.protocol === 'http:',
+		url => url.href,
+		() => discussionUrl(hit),
+	)(new URL(hit.url)),
+	(_error, hit) => discussionUrl(hit),
+)
 
-  const stories = body.hits.map(hit => {
-    if (!hit || typeof hit.title !== 'string' || typeof hit.objectID !== 'string' ||
-        (hit.url != null && typeof hit.url !== 'string'))
-      throw new Error('The service returned an unexpected response.')
+const toStories = pipe(
+	map(hit => new Story(new StoryTitle(hit.title), new StoryUrl(storyUrl(hit)))),
+	toList,
+)
 
-    return new Story(new StoryTitle(hit.title), new StoryUrl(storyUrl(hit)))
-  })
-  return toList(stories)
-}
+// The schema describes which external values are safe to convert to Gleam.
+const SearchResponse = v.object({
+	hits: v.array(
+		v.object({
+			title: v.string(),
+			objectID: v.string(),
+			url: v.optional(v.nullable(v.string())),
+		}),
+	),
+})
 
-function searchFailure(error) {
-  if (error?.name === 'AbortError') return 'The request timed out. Try again.'
-  if (typeof error?.message === 'string') return error.message
-  return 'The service could not be reached.'
-}
+// Validate the JSON, then construct actual Gleam values.
+export const decodeStories = pipe(
+	body => v.parse(SearchResponse, body),
+	response => response.hits,
+	toStories,
+)
 
-export async function search(query, success, failure) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 12000)
-  let stories
-  try {
-    const url = `https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=5&query=${encodeURIComponent(query)}`
-    const response = await fetch(url, { signal: controller.signal })
-    if (!response.ok) throw new Error(`Service returned HTTP ${response.status}.`)
-    const body = await response.json()
-    stories = decodeStories(body)
-  } catch (error) {
-    failure(searchFailure(error))
-    return
-  } finally {
-    clearTimeout(timeout)
-  }
-  // Keep application callbacks outside the browser-operation try/catch.
-  // A bug in success must not be reported as a second, failed search result.
-  success(stories)
-}
+const searchFailure = cond([
+	[error => error?.name === 'AbortError', () => 'The request timed out. Try again.'],
+	[error => error instanceof v.ValiError, () => 'The service returned an unexpected response.'],
+	[error => typeof error?.message === 'string', error => error.message],
+	[T, () => 'The service could not be reached.'],
+])
 
-export function save(text, success, failure) {
-  try {
-    localStorage.setItem(storageKey, text)
-  } catch {
-    failure('This browser could not save the query.')
-    return
-  }
-  success()
-}
+const searchUrl = query =>
+	`https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=5&query=${encodeURIComponent(query)}`
 
-export function restore(success, failure) {
-  let text
-  try {
-    text = localStorage.getItem(storageKey)
-  } catch {
-    failure('This browser could not read saved queries.')
-    return
-  }
-  if (text === null) {
-    failure('No saved query yet.')
-    return
-  }
-  success(text)
-}
+const readSearchResponse = ifElse(
+	response => response.ok,
+	response => response.json(),
+	response => Promise.reject(new Error(`Service returned HTTP ${response.status}.`)),
+)
 
-export async function copy(text, success, failure) {
-  let clipboard
-  try {
-    clipboard = globalThis.navigator?.clipboard
-  } catch {
-    failure('Clipboard access was denied.')
-    return
-  }
-  if (typeof clipboard?.writeText !== 'function') {
-    failure('Clipboard access is unavailable in this browser.')
-    return
-  }
-  try {
-    await clipboard.writeText(text)
-  } catch {
-    failure('Clipboard access was denied.')
-    return
-  }
-  success()
-}
+// The default timeout is created separately for every request.
+const fetchStories = (
+	query,
+	controller,
+	timeout = setTimeout(() => controller.abort(), 12000),
+) =>
+	Promise.resolve()
+		.then(() => fetch(searchUrl(query), { signal: controller.signal }))
+		.then(readSearchResponse)
+		.then(decodeStories)
+		.finally(() => clearTimeout(timeout))
 
-export function delay(milliseconds, finished) {
-  setTimeout(finished, milliseconds)
-}
+// Sibling handlers: a bug in success cannot trigger the failure callback.
+export const search = (query, success, failure) =>
+	fetchStories(query, new AbortController()).then(
+		success,
+		pipe(searchFailure, failure),
+	)
+
+// Catch only the storage operation, never the application's callbacks.
+const writeDraft = tryCatch(
+	pipe(text => localStorage.setItem(storageKey, text), () => true),
+	() => false,
+)
+
+export const save = (text, success, failure) =>
+	ifElse(
+		writeDraft,
+		() => success(),
+		() => failure('This browser could not save the query.'),
+	)(text)
+
+const readDraft = tryCatch(
+	pipe(() => localStorage.getItem(storageKey), text => ({ ok: true, text })),
+	() => ({ ok: false }),
+)
+
+export const restore = (success, failure) =>
+	pipe(
+		readDraft,
+		cond([
+			[result => !result.ok, () => failure('This browser could not read saved queries.')],
+			[result => result.text === null, () => failure('No saved query yet.')],
+			[T, result => success(result.text)],
+		]),
+	)()
+
+const writeClipboard = text => ifElse(
+	clipboard => typeof clipboard?.writeText === 'function',
+	clipboard => Promise.resolve()
+		.then(() => clipboard.writeText(text))
+		.catch(() => Promise.reject(new Error('Clipboard access was denied.'))),
+	() => Promise.reject(new Error('Clipboard access is unavailable in this browser.')),
+)
+
+export const copy = (text, success, failure) =>
+	Promise.resolve()
+		.then(() => globalThis.navigator?.clipboard)
+		.then(writeClipboard(text), () => Promise.reject(new Error('Clipboard access was denied.')))
+		.then(success, error => failure(error.message))
+
+export const delay = (milliseconds, finished) =>
+	setTimeout(finished, milliseconds)

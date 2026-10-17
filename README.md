@@ -32,7 +32,7 @@ If you are returning after a few months, start with the quick reference. If phan
 
 ## Architecture and implementation
 
-Valuz describes the model/message/operation/effect relationships. The browser adapter uses ordinary JavaScript with async/await and explicit error handling. It needs no runtime JavaScript libraries. The earlier Ramda/Valibot/task implementation and its docs are saved locally on `archive/functional-javascript` (commit `29bb212`).
+Valuz describes the model/message/operation/effect relationships. The browser adapter uses expression-bodied JavaScript functions with native promises and explicit error handling. Ramda supplies small transformations and fallbacks. Valibot validates external response data; it is an implementation choice rather than part of Valuz’s design. The earlier Ramda/Valibot/task implementation and its docs are saved locally on `archive/functional-javascript` (commit `29bb212`).
 
 Phantom query stages use constructorless labels (`pub type Unchecked`, `pub type Searchable`). The opaque query API controls which values may become searchable.
 
@@ -43,3 +43,7 @@ Search Hacker News, read the clock, enable live ticks, save and restore a query,
 Search uses the public Hacker News Algolia API and needs an internet connection. It sends only queries you submit, with no search at startup. Saved drafts stay in this browser's local storage. Clipboard availability depends on the browser. This is a local teaching app, with an intentionally small coordinator and renderer.
 
 The existing folder, Gleam package identifier, and GitHub repository retain their current names. Valuz is the framework name; Browser Lab is the example app. Reusable code has not yet been extracted into a separate package.
+
+## The Value of Values
+
+Read the [30-minute talk](docs/talk.md) for a guided tour of the philosophy, the application cycle, and each file’s responsibility. With the app running, choose **The talk** in the header, or open `/docs/talk.html`. The page includes seven static SVG visuals and a Markdown download.

@@ -129,7 +129,10 @@ fn activity_text(activity: Activity) -> String {
   let Activity(message, effects) = activity
   let requested = case effects {
     [] -> "no effect"
-    _ -> string.join(list.map(effects, effect_name), ", ")
+    _ ->
+      effects
+      |> list.map(effect_name)
+      |> string.join(", ")
   }
   message_name(message) <> " → " <> requested
 }
