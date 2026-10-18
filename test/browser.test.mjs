@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 // npm test runs gleam test first, which copies the FFI beside its generated imports.
-import { copy, decodeStories, restore, save, search } from '../build/dev/javascript/values_browser_lab/browser.mjs'
+import { copy, decodeStories, restore, save, search } from '../build/dev/javascript/values_browser_lab/app/browser.mjs'
 
 function setGlobal(t, name, value) {
   const before = Object.getOwnPropertyDescriptor(globalThis, name)

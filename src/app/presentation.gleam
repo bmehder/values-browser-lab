@@ -1,10 +1,7 @@
-import query
+import app/query
 
 // Words, booleans encoded for DOM attributes, and display strings belong here.
-import gleam/int
-import gleam/list
-import gleam/string
-import model.{
+import app/model.{
   type Activity, type Effect, type Message, type Model, type Subscription,
   Activity, ClipboardFailed, ClipboardReady, ClipboardReturnedWriteResult,
   ClockRead, ClockReading, ClockReturnedTime, ClockTicked, ClockUnread, CopyText,
@@ -19,6 +16,9 @@ import model.{
   UserRequestedLiveClockToggle, UserRequestedQueryCopy, UserRequestedTime,
   UserRequestedTimerStart, UserSubmittedSearch,
 }
+import gleam/int
+import gleam/list
+import gleam/string
 
 // The browser receives a presentation projection, not domain state to interpret.
 pub type StoryLink {

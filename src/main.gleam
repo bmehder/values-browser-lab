@@ -1,13 +1,13 @@
-import domain
-import effects
-import model.{
+import app/domain
+import app/effects
+import app/model.{
   type Effect, type Message, type Model, type Operation, type Subscription,
   ClockTicked, UserEditedDraftQuery, UserRequestedDraftRestore,
   UserRequestedDraftSave, UserRequestedLiveClockToggle, UserRequestedQueryCopy,
   UserRequestedTime, UserRequestedTimerStart, UserSubmittedSearch,
 }
-import presentation.{type Screen}
-import query
+import app/presentation.{type Screen}
+import app/query
 
 pub type Actions {
   Actions(
@@ -44,7 +44,7 @@ pub fn main() -> Nil {
   )
 }
 
-@external(javascript, "./runtime.mjs", "start")
+@external(javascript, "./app/app.mjs", "start")
 fn start(
   model: Model,
   update: fn(Message) -> Operation,

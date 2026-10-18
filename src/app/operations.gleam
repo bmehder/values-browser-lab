@@ -1,5 +1,4 @@
-import gleam/list
-import model.{
+import app/model.{
   type ClockReading, type DraftQuery, type FailureReason, type Operation,
   type SearchRequestId, type Story, type TimerId, Activity, ClipboardFailed,
   Clock, ClockRead, CopyText, CopyingQuery, DraftRestored, DraftSaved, LiveClock,
@@ -8,7 +7,8 @@ import model.{
   SearchRequestId, SearchService, SearchSucceeded, Searching, StartTimer,
   StorageFailed, Timer, TimerFinished, TimerId, TimerRunning,
 }
-import query.{EmptyQuery}
+import app/query.{EmptyQuery}
+import gleam/list
 
 pub fn edit_draft(query: DraftQuery) -> Operation {
   fn(model: model.Model) { #(Model(..model, draft_query: query), []) }

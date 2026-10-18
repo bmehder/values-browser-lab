@@ -1,5 +1,5 @@
 // Domain vocabulary. Primitive representations are named at their boundaries.
-import query
+import app/query
 
 pub type DraftQuery =
   query.Query(query.Unchecked)

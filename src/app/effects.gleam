@@ -1,11 +1,11 @@
-import model.{
+import app/model.{
   type Effect, type Message, type Story, ClipboardReturnedWriteResult,
   ClockReading, ClockReturnedTime, CopyText, FailureReason,
   HttpReturnedSearchResult, Milliseconds, ReadDraft, ReadTime, SaveDraft,
   SearchService, StartTimer, StorageReturnedReadResult,
   StorageReturnedSaveResult, TimerElapsed,
 }
-import query
+import app/query
 
 // This interpreter is the only place an Effect becomes an operation.
 // Adapters report outcomes; update decides how those outcomes affect the model.

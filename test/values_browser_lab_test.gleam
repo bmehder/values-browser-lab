@@ -1,6 +1,5 @@
-import domain
-import gleeunit
-import model.{
+import app/domain
+import app/model.{
   ClockRead, ClockReading, ClockTicked, DraftRestored, EverySecond,
   FailureReason, HttpReturnedSearchResult, LiveClock, ManualClock, Milliseconds,
   Model, SearchReady, SearchRequestId, SearchService, SearchSucceeded, Searching,
@@ -8,8 +7,9 @@ import model.{
   TimerFinished, TimerId, TimerRunning, UserEditedDraftQuery,
   UserRequestedLiveClockToggle, UserRequestedTimerStart, UserSubmittedSearch,
 }
-import presentation
-import query.{EmptyQuery}
+import app/presentation
+import app/query.{EmptyQuery}
+import gleeunit
 
 pub fn main() {
   gleeunit.main()

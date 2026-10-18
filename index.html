@@ -12,7 +12,8 @@
 
 <body>
   <header class="topbar"><a class="brand" href="/">Valuz<span> / browser lab</span></a>
-    <div class="header-actions"><a class="docs-link" href="/docs/">Docs</a><a class="docs-link" href="/docs/talk.html">The talk</a><span class="badge">GLEAM → JAVASCRIPT</span><a class="github-link"
+    <div class="header-actions"><a class="docs-link" href="/docs/">Docs</a><a class="docs-link"
+        href="/docs/talk.html">The talk</a><span class="badge">GLEAM → JAVASCRIPT</span><a class="github-link"
         href="https://github.com/bmehder/values-browser-lab" target="_blank" rel="noopener noreferrer"
         aria-label="View source on GitHub" title="View source on GitHub"><svg viewBox="0 0 24 24" width="22" height="22"
           fill="currentColor" aria-hidden="true">
@@ -33,68 +34,7 @@
         <div>update selects <i>·</i> apply to model <i>·</i> perform ↵</div>
       </div>
     </section>
-    <div class="workspace">
-      <div class="controls">
-        <section class="panel search-panel">
-          <div class="section-top"><span class="eyebrow">01 / EXTERNAL SERVICE</span><span class="pill">HACKER
-              NEWS</span></div>
-          <h2>A query goes out.<br>A message comes back.</h2>
-          <form id="search-form"><label for="query">Search stories</label>
-            <div class="input-row"><input id="query" name="query" autocomplete="off"
-                placeholder="Try functional programming"><button class="primary" type="submit">Search <span
-                  aria-hidden="true">↗</span></button></div>
-          </form>
-          <div class="search-summary" aria-live="polite">
-            <h3 id="search-status"></h3>
-            <p id="submitted-query"></p>
-          </div>
-          <ul id="results" class="results"></ul>
-          <p class="footnote">Search requests go to the public Hacker News search API (Algolia). Older responses are
-            ignored when a newer search takes over.</p>
-        </section>
-        <div class="tools-grid">
-          <section class="panel">
-            <p class="eyebrow">02 / TIME</p>
-            <div class="clock-line"><span id="clock-dot" class="dot"></span>
-              <h2 id="clock-value">Not read yet</h2>
-            </div>
-            <p>Read once, or subscribe to a tick every second.</p>
-            <div class="buttons"><button id="read-time">Read time</button><button id="clock-toggle"
-                aria-pressed="false">Start live clock</button></div>
-          </section>
-          <section class="panel">
-            <p class="eyebrow">03 / LOCAL STORAGE</p>
-            <h2>Keep a thought.</h2>
-            <p id="storage-status" aria-live="polite"></p>
-            <div class="buttons"><button id="save-query">Save query</button><button id="restore-query">Restore</button>
-            </div>
-          </section>
-          <section class="panel">
-            <p class="eyebrow">04 / CLIPBOARD</p>
-            <h2>Take it with you.</h2>
-            <p id="clipboard-status" aria-live="polite"></p><button id="copy-query">Copy query <span
-                aria-hidden="true">↗</span></button>
-          </section>
-          <section class="panel">
-            <p class="eyebrow">05 / TIMER</p>
-            <h2>Later is a message.</h2>
-            <p id="timer-status" aria-live="polite"></p><button id="timer-button">Start 3-second timer</button>
-          </section>
-        </div>
-      </div>
-      <aside class="panel activity-panel">
-        <div class="section-top"><span class="eyebrow">THE CONVERSATION</span><span id="activity-count"
-            class="pill">0</span></div>
-        <h2>Watch it unfold.</h2>
-        <p>Newest message first. Each line shows what the chosen operation requested.</p>
-        <p id="empty-activity" class="empty">Try one of the controls.<br>Your program’s decisions will appear here.</p>
-        <ol id="activity" class="activity"></ol>
-        <details>
-          <summary>Inspect the current model</summary>
-          <pre id="model-value"></pre>
-        </details>
-      </aside>
-    </div>
+    <div class="workspace" id="app"></div>
     <section class="explanation">
       <div>
         <p class="eyebrow">WHERE TO LOOK</p>
@@ -105,14 +45,16 @@
         <li><strong>domain.gleam</strong><span>Read a message. Return the operation it describes.</span></li>
         <li><strong>operations.gleam</strong><span>Pure functions from the current model to the next turn.</span></li>
         <li><strong>presentation.gleam</strong><span>Turn structured state into words for the screen.</span></li>
-        <li><strong>effects.gleam</strong><span>The perform function: effect values become operations.</span></li>
-        <li><strong>runtime.mjs</strong><span>Keep the model, drain the queue, render, and reconcile
-            subscriptions.</span></li>
+        <li><strong>effects.gleam</strong><span>The perform function: interpret effect descriptions at the browser
+            boundary.</span></li>
+        <li><strong>runtime.gleam</strong><span>Keep the model, drain messages, and call supplied adapters.</span></li>
+        <li><strong>app.mjs</strong><span>Connect template rendering and the live-clock lifecycle.</span></li>
+        <li><strong>view.mjs</strong><span>Template values describing every panel and its events.</span></li>
         <li><strong>browser.mjs</strong><span>Fetch, clock, storage, clipboard, and timer adapters.</span></li>
       </ol>
     </section>
   </main>
-  <footer>Describe what happens. Compose what happens next.<span>Valuz · An emerging framework</span>
+  <footer>Describe what happens. Compose what happens next.<span>Valuz · A small MVU runtime</span>
   </footer>
 </body>
 

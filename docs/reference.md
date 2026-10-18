@@ -2,6 +2,8 @@
 
 Use this page to find a responsibility or recall a term. Use the [full guide](guide.md) for explanations and walkthroughs.
 
+Valuz is a small MVU runtime. `src/valuz/` is reusable; `src/app/` is Browser Lab; `src/main.gleam` wires the application together.
+
 ## One turn
 
 ```text
@@ -26,14 +28,17 @@ The operation describes a pure state transition. The effect describes requested 
 
 | Need | File |
 |---|---|
-| Named types and states | [model.gleam](../src/model.gleam) |
-| Opaque query constructor and preparation | [query.gleam](../src/query.gleam) |
-| Message-to-operation table | [domain.gleam](../src/domain.gleam) |
-| Transition policy | [operations.gleam](../src/operations.gleam) |
-| Screen wording and subscription description | [presentation.gleam](../src/presentation.gleam) |
-| Gleam effect interpreter | [effects.gleam](../src/effects.gleam) |
-| Browser operations, decoding, and result callbacks | [browser.mjs](../src/browser.mjs) |
-| Queue, current model, rendering, and intervals | [runtime.mjs](../src/runtime.mjs) |
+| Named types and states | [model.gleam](../src/app/model.gleam) |
+| Opaque query constructor and preparation | [query.gleam](../src/app/query.gleam) |
+| Message-to-operation table | [domain.gleam](../src/app/domain.gleam) |
+| Transition policy | [operations.gleam](../src/app/operations.gleam) |
+| Screen wording and subscription description | [presentation.gleam](../src/app/presentation.gleam) |
+| Gleam effect interpreter | [effects.gleam](../src/app/effects.gleam) |
+| Browser operations, decoding, and result callbacks | [browser.mjs](../src/app/browser.mjs) |
+| Browser rendering and live-clock lifecycle | [app.mjs](../src/app/app.mjs) |
+| All panel templates and message-producing event bindings | [view.mjs](../src/app/view.mjs) |
+| Generic queue, current model, and adapter calls | [runtime.gleam](../src/valuz/runtime.gleam) |
+| Reference storage and exception cleanup | [runtime_ffi.mjs](../src/valuz/runtime_ffi.mjs) |
 | Wiring and DOM message constructors | [main.gleam](../src/main.gleam) |
 | Call main from the bundle | [entry.mjs](../entry.mjs) |
 
@@ -59,17 +64,16 @@ String → from_input → Query(Unchecked)
 
 ## JavaScript boundary
 
-The current implementation uses expression-bodied functions, native promises, and small Ramda compositions. Valibot validates external response data. Ramda supplies `pipe`, `map`, `ifElse`, `cond`, and synchronous `tryCatch` in small helpers. The task helper remains archived; search and clipboard use promise chains; storage remains synchronous. The earlier complete experiment is saved locally on `archive/functional-javascript` at `29bb212`.
+The browser effects use plain functions, async/await, and local try/catch. Valibot validates external response data. lit-html renders the template values built by `view.mjs`. The coordinator in `runtime.gleam` knows neither library.
 
 | Expression | Meaning |
 |---|---|
-| `fetch(url).then(next)` | Start a request and pass its successful result to next |
-| `response.ok` | Whether HTTP status indicates success; fetch does not reject all bad statuses |
-| `response.json()` | Parse a body; validate its shape afterward |
-| `tryCatch` | Handle synchronous exceptions from the wrapped operation |
-| `.finally(cleanup)` | Clean up on either outcome |
+| `await fetch(url)` | Wait for a response while the browser remains responsive |
+| `response.ok` | Whether the HTTP status indicates success |
+| `v.parse(schema, body)` | Validate external data or throw a validation error |
+| `.then(success, failure)` | Report outcomes through sibling handlers |
+| `finally` | Release the request's timeout on either outcome |
 | `toList(stories)` | Convert a JavaScript array to a Gleam list |
-| `success(value)` / `failure(reason)` | Report an external outcome to Gleam |
 
 Inspect archived files without changing the working tree with `git show archive/functional-javascript:src/task.mjs`.
 
@@ -106,3 +110,13 @@ npm run check   # Format check, tests, build
 ```
 
 Stop the server with Ctrl+C. Change the port in `package.json`. Install dependencies on a fresh checkout with `npm install` and `gleam deps download`.
+
+## Runtime adapters
+
+`runtime.create(Config(...))` returns a typed `Runtime` containing `dispatch`, `refresh`, and `stop`. The configuration supplies `initial`, `update`, `view`, `subscriptions`, `present`, `reconcile`, `perform`, and `observe`; pass a no-op function for `observe` when it is unused. The coordinator is generic over the model, messages, effects, subscriptions, and view description. [runtime_ffi.mjs](../src/valuz/runtime_ffi.mjs) supplies only reference storage and exception cleanup. Call `refresh()` after constructing the host to publish the initial state. `reconcile(descriptions, dispatch)` owns subscription interpretation; `perform(effect, dispatch)` owns effect interpretation. Neither DOM IDs nor lit-html are known by the coordinator.
+
+`app.mjs` composes the supplied Gleam model-to-Screen projection with `appView`, then passes the resulting template to `render`. It also owns the live-clock interval and page lifecycle listeners. Its `dispose()` stops the runtime, clears the interval, removes those listeners, and clears the rendered root.
+
+## Interface templates
+
+[view.mjs](../src/app/view.mjs) describes every dynamic panel using standalone lit-html. Event expressions dispatch messages; input properties and attributes are declarative. The runtime and Gleam transition rules are independent of the renderer. There are no signals or separate DOM-control listener tables.

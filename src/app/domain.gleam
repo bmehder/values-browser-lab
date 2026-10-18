@@ -1,4 +1,4 @@
-import model.{
+import app/model.{
   type Message, type Operation, ClipboardReturnedWriteResult, ClockReturnedTime,
   ClockTicked, HttpReturnedSearchResult, StorageReturnedReadResult,
   StorageReturnedSaveResult, TimerElapsed, UserEditedDraftQuery,
@@ -6,7 +6,7 @@ import model.{
   UserRequestedLiveClockToggle, UserRequestedQueryCopy, UserRequestedTime,
   UserRequestedTimerStart, UserSubmittedSearch,
 }
-import operations
+import app/operations
 
 // Read a message; choose its operation. The coordinator supplies the model later.
 pub fn update(message: Message) -> Operation {
