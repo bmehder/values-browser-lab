@@ -11,14 +11,6 @@ pub type SearchRequestId {
   SearchRequestId(Int)
 }
 
-pub type TimerId {
-  TimerId(Int)
-}
-
-pub type Milliseconds {
-  Milliseconds(Int)
-}
-
 pub type ClockReading {
   ClockReading(String)
 }
@@ -69,30 +61,10 @@ pub type StorageState {
   StorageFailed(FailureReason)
 }
 
-pub type ClipboardState {
-  ClipboardReady
-  CopyingQuery
-  QueryCopied
-  ClipboardFailed(FailureReason)
-}
-
-pub type TimerState {
-  TimerReady
-  TimerRunning(TimerId)
-  TimerFinished
-}
-
-pub type Timer {
-  Timer(state: TimerState, next_id: TimerId)
-}
-
 pub type Effect {
   SearchService(SearchRequestId, SearchQuery)
-  ReadTime
   SaveDraft(DraftQuery)
   ReadDraft
-  CopyText(DraftQuery)
-  StartTimer(TimerId, Milliseconds)
 }
 
 pub type Subscription {
@@ -104,23 +76,13 @@ pub type Subscription {
 pub type Message {
   UserEditedDraftQuery(DraftQuery)
   UserSubmittedSearch
-  UserRequestedTime
   UserRequestedDraftSave
   UserRequestedDraftRestore
-  UserRequestedQueryCopy
-  UserRequestedTimerStart
   UserRequestedLiveClockToggle
   HttpReturnedSearchResult(SearchRequestId, Result(List(Story), FailureReason))
-  ClockReturnedTime(ClockReading)
   ClockTicked(ClockReading)
   StorageReturnedSaveResult(Result(Nil, FailureReason))
   StorageReturnedReadResult(Result(DraftQuery, FailureReason))
-  ClipboardReturnedWriteResult(Result(Nil, FailureReason))
-  TimerElapsed(TimerId)
-}
-
-pub type Activity {
-  Activity(message: Message, requested_effects: List(Effect))
 }
 
 pub type Model {
@@ -130,9 +92,6 @@ pub type Model {
     next_search_request_id: SearchRequestId,
     clock: Clock,
     storage_state: StorageState,
-    clipboard_state: ClipboardState,
-    timer: Timer,
-    activity: List(Activity),
   )
 }
 
@@ -147,8 +106,5 @@ pub fn initial() -> Model {
     next_search_request_id: SearchRequestId(1),
     clock: Clock(display: ClockUnread, mode: ManualClock),
     storage_state: StorageReady,
-    clipboard_state: ClipboardReady,
-    timer: Timer(state: TimerReady, next_id: TimerId(1)),
-    activity: [],
   )
 }

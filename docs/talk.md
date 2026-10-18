@@ -20,7 +20,7 @@ You can understand the individual sentences without knowing what the conversatio
 
 That is the problem I want to work on today. How do we make a program easier to approach? How do we make its structure visible enough that we can leave, come back two months later, and find our way around?
 
-Our example is a small browser application. You can search Hacker News, save a query, restore it, copy it, read the time, and start a timer. These features are deliberately modest. We need enough contact with the outside world to encounter real problems, while keeping the program small enough to examine.
+Our example is a small browser application. You can search Hacker News, save and restore a query, and start or stop a live clock. These features are deliberately modest. We need enough contact with the outside world to encounter real problems, while keeping the program small enough to examine.
 
 Valuz is a small runtime for Model–View–Update applications. Browser Lab is the example we will explore. The larger exercise is functional application design: making application state, decisions, views, and requested effects explicit as values. Valuz gives those descriptions a small execution mechanism.
 
@@ -137,7 +137,7 @@ The named alternatives answer some of those questions in the structure. A failed
 
 This does not make every invalid condition impossible. Public constructors and foreign JavaScript still deserve attention. It does reduce the number of things the reader must infer from neighboring fields.
 
-The same approach explains types such as `Clock`, `Timer`, and `StorageState`. They belong to the example application's features. They are not requirements imposed on every application by Valuz. The clock is here to demonstrate one-time readings and ongoing subscriptions, rather than to make search work.
+The same approach explains types such as `Clock` and `StorageState`. They belong to the example application's features. They are not requirements imposed on every application by Valuz. The clock demonstrates an ongoing subscription. Storage demonstrates immediate effect responses; search demonstrates asynchronous results.
 
 That distinction helps when the model starts looking large. Some names describe the architecture. Other names describe the application we chose to build with it. We should be able to separate those responsibilities in our heads even when they share a file.
 
@@ -217,9 +217,7 @@ We could put the transition logic directly in the message branches. Moving it in
 
 That is a navigation aid, not a universal rule that every branch must move to another file. For this experiment, it makes a useful separation between choosing an operation and understanding how it calculates the next turn.
 
-The real update function also wraps the chosen operation with activity recording. That wrapper applies the operation, records the incoming message alongside its requested effects, and returns the resulting pair. It doesn't perform those effects.
-
-We can wrap an operation because the operation is a value. `record_activity` takes one mapping and returns another with the same operation shape, adding an activity entry to the resulting model. The larger description is still a function value, so we can add observation without rewriting every decision.
+The update table directly returns the selected operation. This is enough: choose a mapping, then let the runtime apply it to the current model. We don't need to add bookkeeping to make that relationship visible.
 
 ## 5. Follow one search through the decision
 
@@ -294,7 +292,7 @@ We can repair this JavaScript. Give each request an identity, retain the active 
 
 The model remembers `Searching(request, query)`. The response operation receives the returned request identity and compares it with the active one. If they match, success or failure becomes the next search state. If they don't, the response leaves the domain state unchanged.
 
-The activity wrapper can still record an obsolete message. Ignoring its effect on search state doesn't mean pretending it never arrived.
+An obsolete result leaves the current search state unchanged and requests no effects. Relevance is an explicit application decision.
 
 This is where the model-and-effect pair earns its keep. The decision that says “request 7 is now active” also returns the description “perform request 7.” There is a single result to inspect:
 
@@ -327,13 +325,13 @@ With these responsibilities in place, a future callback no longer gets to reach 
 
 Think of a strip of film. Each frame gives us a coherent image at a particular point. Movement appears across a sequence of images, but we can stop the reel and examine one frame.
 
-Our transition outputs are a little like those frames: a next model, together with descriptions of work requested on that turn. We can stop on a pair and ask whether it makes sense. Does the active request match the requested search? Does this state really call for a timer? Did this message request any external work at all?
+Our transition outputs are a little like those frames: a next model, together with descriptions of work requested on that turn. We can stop on a pair and ask whether it makes sense. Does the active request match the requested search? Does this state really call for a storage write? Did this message request any external work at all?
 
 Effects in a frame describe new work requested at that turn; they are not a complete inventory of everything still in flight. The model must retain whatever ongoing obligations matter to the application. Also, “no effect” means no new external work was requested, not that the world has become idle.
 
-The analogy has a useful limit. Our app does not store a complete reel of models. It retains the current model and a short activity log. Complete snapshots or replay would be additional tooling. What we already have is a transition shape that makes those ideas possible to investigate.
+The analogy has a useful limit. Our app does not store a complete reel of models. It retains the current model. The collapsible inspector shows that value without adding history to it. Complete snapshots or replay would be additional tooling. What we already have is a transition shape that makes those ideas possible to investigate.
 
-To understand a transition, I need the current model and incoming message. I don't need to reconstruct every assignment that produced the model, or imagine which callbacks might eventually mutate it. Relevant history is summarized in the current value: the request identity, the submitted query, the timer state. Future outcomes will be considered when their messages arrive.
+To understand a transition, I need the current model and incoming message. I don't need to reconstruct every assignment that produced the model, or imagine which callbacks might eventually mutate it. Relevant history is summarized in the current value: the request identity, the submitted query, the clock mode. Future outcomes will be considered when their messages arrive.
 
 We haven't abolished time. We have stopped asking the reader to mentally execute the whole timeline just to understand one decision.
 
@@ -371,7 +369,7 @@ Gleam's compiler helped us describe the pure conversation. It cannot stand besid
 
 So we push this dirty work toward the edge, keep it together, and make the individual pieces small enough that problems are easier to spot. The aim is to spend less time in the trenches when we're trying to understand the application’s decisions. We still have to inspect and test the boundary carefully.
 
-This file knows about fetch, clipboard access, local storage, dates, and timeouts. It validates the external search response and constructs the values expected by Gleam. A successful HTTP status doesn't establish that the response contains stories. JSON parsing doesn't establish that either. A Valibot schema checks the shape before we construct `Story` values.
+This file knows about fetch, local storage, dates, and request timeouts. It validates the external search response and constructs the values expected by Gleam. A successful HTTP status doesn't establish that the response contains stories. JSON parsing doesn't establish that either. A Valibot schema checks the shape before we construct `Story` values.
 
 At the same boundary, the URL helper accepts HTTP and HTTPS links and falls back to the story's discussion page for unsuitable URLs. Request resources, such as timeouts, are cleaned up here. Which returned request still matters is decided back in the domain.
 
@@ -388,7 +386,7 @@ The architectural gain comes from containing this work and giving it an explicit
 
 There is a small detail in the promise chain worth preserving. Success and failure are sibling handlers. If application code throws while handling a successful response, that exception does not get reported as a second, failed network result. Our tests protect that distinction.
 
-We still have real uncertainty: denied clipboard access, unavailable storage, malformed responses, and timeouts. The design gives those outcomes a route back into the application. It does not promise to prevent them.
+We still have real uncertainty: unavailable storage, malformed responses, and timeouts. The design gives those outcomes a route back into the application. It does not promise to prevent them.
 
 ## 7. The little machine that connects the pieces
 
@@ -412,7 +410,7 @@ perform_effects(state, config, effects)
 
 These lines are an excerpt from the processing loop, not a standalone implementation. The order is the important part: calculate, retain, project, reconcile, perform. This is the coordinator’s part of the agreement we saw in the search example. The operation supplies a coherent pair, the response policy checks relevance, and this loop establishes when the next turn can observe the retained state.
 
-Why retain the next model before performing an effect? Because an effect can report back immediately. Storage is synchronous in this implementation. Reading the time is synchronous too. If those results observed the previous model, our neat diagram would describe an ordering the application didn't actually follow.
+Why retain the next model before performing an effect? Because an effect can report back immediately. Storage is synchronous in this implementation. If those results observed the previous model, our neat diagram would describe an ordering the application didn't actually follow.
 
 The queue handles that case. A callback adds its message to the queue. A processing guard keeps it from starting a nested update while the current turn is still running. Once the current turn finishes, the next queued message gets its turn with the retained model.
 
@@ -420,7 +418,7 @@ The Gleam coordinator retains the current model, a queue, and processing and sto
 
 [app.mjs](../src/app/app.mjs) keeps this application's browser wiring together: the existing HTML, DOM event handlers, the model inspector, and the live-clock interval. It supplies ordinary `present`, `observe`, and `reconcile` functions to the coordinator.
 
-[view.mjs](../src/app/view.mjs) describes every panel as a template value using standalone [lit-html](https://lit.dev/docs/libraries/standalone-templates/). The markup and the events belong together. An input expression describes the displayed query; an event expression dispatches a message when someone edits it. The template includes the controls, result links, activity list, and model inspector.
+[view.mjs](../src/app/view.mjs) describes every panel as a template value using standalone [lit-html](https://lit.dev/docs/libraries/standalone-templates/). The markup and the events belong together. An input expression describes the displayed query; an event expression dispatches a message when someone edits it. The template includes the controls, result links, and current-model inspector.
 
 The browser host connects this view language to our coordinator with two functions:
 
@@ -448,17 +446,15 @@ For today, the mechanism is visible. There is no mysterious second application h
 
 Open [presentation.gleam](../src/app/presentation.gleam). The model contains application concepts. The screen needs words, links, and display choices. Presentation translates between them.
 
-A failed search becomes a heading and a reason. A running timer becomes “Waiting for the browser…” and a restart label. The JavaScript template receives a screen description rather than independently interpreting domain states. It produces the interface value that the renderer interprets.
+A failed search becomes a heading and a reason. A live clock mode becomes a “Stop live clock” label. The JavaScript template receives a screen description rather than independently interpreting domain states. It produces the interface value that the renderer interprets.
 
-Even the activity text is a small transformation:
+The story projection is another small mapping:
 
 ```gleam
-effects
-|> list.map(effect_name)
-|> string.join(", ")
+list.map(stories, story_link)
 ```
 
-The interesting part is the direction. We start with effect values, give each one a display name, then join the names. The syntax follows the journey of the data.
+Each `Story` becomes a `StoryLink` containing the title and URL the template needs. The collection holds domain values; presentation returns display values.
 
 Presentation also describes subscriptions. When the clock mode is live, subscriptions returns `[EverySecond]`. When it is manual, it returns `[]`. The function does not start an interval. It states which ongoing input the current model wants.
 
@@ -477,7 +473,7 @@ Model → List(Subscription)
 
 Given a model, each selects its corresponding description. They belong to the same story as `Message → Operation`: we keep giving a value to a mapping and obtaining another value.
 
-`list.map(effect_name)` makes the relationship visible at the collection level. `effect_name` maps one effect value to one name; `list.map` applies that mapping to each element. Then `string.join` maps the resulting list of names to one string. The application uses both the general idea of mapping inputs to outputs and the familiar collection operation that carries a mapping across a list.
+`story_link` maps one story to one display value; `list.map` carries that mapping across the list. The application uses both the general idea of mapping inputs to outputs and the familiar collection operation that applies a mapping to each element.
 
 Rendering and maintaining an interval still do work. Deciding what to show and what to subscribe to are pure mappings we can inspect before that work happens.
 
@@ -536,7 +532,7 @@ If you are adding a feature, describe its conversation first. What can the user 
 
 Let's make the file map earn its place. Add a **Clear results** action. Its behavior is deliberately small: return search to `SearchReady`, keep the draft, and request no external work. If a search was pending, its later result should no longer repopulate the cleared view.
 
-This is a walkthrough of a proposed extension, not a control currently added to the live app. The following three stages were checked in a temporary copy of this project's actual Gleam source. The production source was left unchanged.
+This is a walkthrough of a proposed extension, not a control currently added to the live app. The message and operation stages were checked in an isolated copy of the current Gleam source. The production source was left unchanged.
 
 **First, add a message.** Inside `Message` in `model.gleam`, add:
 
@@ -544,7 +540,7 @@ This is a walkthrough of a proposed extension, not a control currently added to 
 UserRequestedSearchClear
 ```
 
-Build, before changing anything else. The compiler reports two inexhaustive case expressions: one in `domain.gleam` and one in `presentation.gleam`. Each diagnostic identifies the missing case:
+Build, before changing anything else. The compiler reports an inexhaustive case expression in `domain.gleam`. The diagnostic identifies the missing case:
 
 ```text
 error: Inexhaustive patterns
@@ -554,7 +550,7 @@ The missing patterns are:
     model.UserRequestedSearchClear
 ```
 
-The compiler has found both places where we interpret every message: choosing an operation and giving the message a display name for the activity log. We didn't have to remember the second one. We didn't need a test that clicked the button and hoped the log still worked.
+The compiler has found the table where every message needs an operation. We didn't have to find every call site ourselves. The reminder comes from making the alternatives explicit.
 
 **Next, define the operation and connect the message.** Add this function to `operations.gleam`, using the module's existing imports:
 
@@ -572,15 +568,7 @@ Add this branch inside `domain.update`'s message case. Using the qualified const
 model.UserRequestedSearchClear -> operations.clear_search()
 ```
 
-Build again. The update table is now covered, but the compiler still points to `presentation.gleam`. It is helping us finish the work, rather than silently choosing a default for a message we have never considered.
-
-**Then name the new message.** In `presentation.gleam`, import `UserRequestedSearchClear` from `model`, and add this branch inside `message_name`:
-
-```gleam
-UserRequestedSearchClear -> "UserRequestedSearchClear"
-```
-
-At this point the Gleam build succeeds. No new effect was needed. The `Screen` type is unchanged because presentation already knows how to show `SearchReady`.
+Build again. The Gleam build succeeds. No new effect is needed. The `Screen` type is unchanged because presentation already knows how to show `SearchReady`.
 
 What about the late response? `receive_search_result` accepts a response only while the current state is `Searching` with a matching identity. Clearing changes the state to `SearchReady`, so the old outcome is ignored. The request isn't physically canceled; its eventual result simply has no authority to refill the view. A subsequent new search gets a fresh identity because we preserve the counter.
 
@@ -618,9 +606,9 @@ Large companies can change direction too. Financial backing and organizational s
 
 The point is to empower ourselves to make decisions when we're ready: keep using a framework, migrate, maintain a small boundary ourselves, or explore a different approach. A visible mechanism gives us more informed choices. Building it once can be useful even when the eventual decision is to let a mature framework handle it.
 
-We should also be honest about the present implementation. The model includes this application's example features. The browser view describes this app’s HTML templates, while the coordinator is independent of that rendering choice. The subscription manager handles the clock. There is no general cancellation system, persistent history, or production-grade replay tool hiding behind the activity panel.
+We should also be honest about the present implementation. The model includes this application's example features. The browser view describes this app’s HTML templates, while the coordinator is independent of that rendering choice. The subscription manager handles the clock. There is no general cancellation system, persistent history, or replay tool hidden behind the model inspector.
 
-The activity log records recent messages and requested effects. It helps us inspect the conversation. It is not automatically a complete replay facility: external outcomes, initial conditions, and interpretation choices all matter. A useful next tool would need to specify exactly what it records and what replay means.
+The model inspector shows current state. Its formatter includes constructor names, making a switch from `ManualClock` to `LiveClock` visible even though neither variant has a payload. It stores no history. Recording or replay would require a deliberate contract for external outcomes, initial conditions, and interpretation choices.
 
 Tests already benefit from the separation. We can test pure decisions directly and exercise browser adapters with controlled responses. We can check that storage failure reports once, that stale search results are ignored, and that callback bugs aren't misreported as external failures.
 

@@ -157,7 +157,7 @@ main {
 }
 .workspace {
 	display: grid;
-	grid-template-columns: minmax(0, 1.7fr) minmax(310px, 1fr);
+	grid-template-columns: minmax(0, 1fr);
 	gap: 22px;
 	align-items: start;
 }
@@ -330,53 +330,9 @@ p.footnote {
 	background: var(--teal);
 	box-shadow: 0 0 0 4px #9ae7cb13;
 }
-.activity-panel {
-	position: sticky;
-	top: 24px;
-}
-.activity-panel h2 {
-	margin-top: 25px;
-}
-.activity-panel p code {
-	color: var(--teal);
-}
-.activity-panel p.empty {
-	padding: 25px 0;
-	color: #6d898a;
-}
-.activity {
-	list-style: none;
-	padding: 0;
-	margin: 24px 0 0;
-}
-.activity li {
-	display: flex;
-	gap: 12px;
-	align-items: flex-start;
-	padding: 12px 0;
-	border-top: 1px solid var(--border);
-	font-size: 10px;
-	line-height: 1.7;
-}
-.activity li span {
-	color: #4d6c6b;
-	font-family: ui-monospace, monospace;
-}
-.activity code {
-	font:
-		10px/1.7 ui-monospace,
-		SFMono-Regular,
-		monospace;
-	color: #c3d9ce;
-	overflow-wrap: anywhere;
-}
-.activity li:first-child code {
-	color: var(--teal);
-}
-details {
-	border-top: 1px solid var(--border);
-	margin-top: 25px;
-	padding-top: 18px;
+.model-inspector {
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
 }
 summary {
 	font-size: 11px;
@@ -460,15 +416,8 @@ footer {
 	.workspace {
 		grid-template-columns: 1fr;
 	}
-	.activity-panel {
-		position: static;
-	}
 	.intro {
 		padding-top: 45px;
-	}
-	.activity {
-		max-height: 360px;
-		overflow: auto;
 	}
 	footer {
 		margin: 0 25px;

@@ -168,9 +168,9 @@ An already-arriving tick is harmless to clock state after the user selects manua
 
 Calling `runtime.create(config)` retains the supplied initial model but doesn't automatically publish it. The browser host obtains the root container, creates the coordinator and page lifecycle listeners, then calls `refresh()`.
 
-Refresh derives the model's Screen projection and interface template, renders it, calls the optional observation function, and reconciles subscriptions without consuming a message, applying an operation, recording activity, or requesting an effect list. An immediate message dispatched during publication is queued and processed after publication finishes. The browser host has no separate initial-render path, so the initial interface is rendered once.
+Refresh derives the model's Screen projection and interface template, renders it, calls the supplied observation function, and reconciles subscriptions without consuming a message, applying an operation, or requesting an effect list. An immediate message dispatched during publication is queued and processed after publication finishes. The browser host has no separate initial-render path, so the initial interface is rendered once.
 
-The model inspector is part of the template description. This host supplies a no-op `observe` callback. A custom host can still supply that hook.
+The model inspector is part of the template description. It formats the current model with constructor names; no history or activity recording is stored in the application model. This host supplies a no-op `observe` callback. A custom host can still supply that hook.
 
 Refresh during an active drain is currently ignored. There is no scheduled refresh request. Whether a more general host would need one is an open question.
 
@@ -182,7 +182,7 @@ This is not a rollback. Stop doesn't interrupt a synchronous function that is al
 
 The browser host's returned `dispose()` also removes its input and page-event listeners and clears its live interval. `pagehide` only pauses that interval so the mount can resume after back/forward navigation; it is not full disposal.
 
-**Limit:** outstanding search requests and one-shot timers are not owned by a cancellation registry. Search has its own timeout; an old timer can fire and have its message ignored. The application currently doesn't expose the host's disposal handle through a public Gleam lifecycle API.
+**Limit:** outstanding search requests are not owned by a cancellation registry. Search has its own timeout; a response arriving after disposal is ignored. The application currently doesn't expose the host's disposal handle through a public Gleam lifecycle API.
 
 ## 8. Failure is not one category
 
@@ -191,7 +191,7 @@ An expected failure from the world belongs in a result message. A bug in our own
 | Failure | Current behavior | Contract question |
 |---|---|---|
 | Network error, bad HTTP status, invalid search data, request timeout | Search adapter reports a failure result message. | Adequate for the current feature. |
-| Denied storage or clipboard access | Adapter reports the corresponding failure message. | Adequate for the current feature. |
+| Denied storage access | Adapter reports the corresponding failure message. | Adequate for the current feature. |
 | Operation throws before returning a pair | The message has been removed from the queue; previous model remains retained. Error escapes. | How do we report the failed turn, and can processing continue? |
 | `view`, `present`, `observe`, or `reconcile` throws | New model may already be retained. Later publication steps and requested effects are skipped. Error escapes. | Should presentation or inspection failure prevent requested effects? |
 | A synchronous `perform` call throws | Earlier effects may already have started. Later effects aren't invoked by that drain. Error escapes. | Should we stop the application or isolate the failed interpreter? |
@@ -219,7 +219,7 @@ Those checks provide evidence for the specific paths above. They don't establish
 
 **Second: decide which publication responsibilities can block work.** Screen output, model inspection, subscription reconciliation, and effect handoff are currently tied together by call order. Their ordering is intentional, but their failure dependencies need justification. Inspection is the clearest candidate for independent failure handling.
 
-**Third: establish resource ownership before adding cancellation.** The browser wiring owns the live interval and listeners. One-shot operations manage their own immediate resources. If we want host disposal to cancel pending searches and timers, define how interpreters return cancellation handles and what messages, if any, cancellation produces. Don't introduce a general task system just to hide those questions.
+**Third: establish resource ownership before adding cancellation.** The browser wiring owns the live interval and listeners. One-shot operations manage their own immediate resources. If we want host disposal to cancel pending searches, define how interpreters return cancellation handles and what messages, if any, cancellation produces. Don't introduce a general task system just to hide those questions.
 
 A scheduling budget can follow if real message traffic makes it necessary. Another rendering tool can remain an independent choice. Neither resolves the earlier questions.
 

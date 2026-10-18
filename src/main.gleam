@@ -3,8 +3,7 @@ import app/effects
 import app/model.{
   type Effect, type Message, type Model, type Operation, type Subscription,
   ClockTicked, UserEditedDraftQuery, UserRequestedDraftRestore,
-  UserRequestedDraftSave, UserRequestedLiveClockToggle, UserRequestedQueryCopy,
-  UserRequestedTime, UserRequestedTimerStart, UserSubmittedSearch,
+  UserRequestedDraftSave, UserRequestedLiveClockToggle, UserSubmittedSearch,
 }
 import app/presentation.{type Screen}
 import app/query
@@ -13,11 +12,8 @@ pub type Actions {
   Actions(
     edit: fn(String) -> Message,
     search: Message,
-    time: Message,
     save: Message,
     restore: Message,
-    copy: Message,
-    timer: Message,
     toggle_clock: Message,
     tick: fn(String) -> Message,
   )
@@ -33,11 +29,8 @@ pub fn main() -> Nil {
     Actions(
       fn(text) { UserEditedDraftQuery(query.from_input(text)) },
       UserSubmittedSearch,
-      UserRequestedTime,
       UserRequestedDraftSave,
       UserRequestedDraftRestore,
-      UserRequestedQueryCopy,
-      UserRequestedTimerStart,
       UserRequestedLiveClockToggle,
       fn(time) { ClockTicked(model.ClockReading(time)) },
     ),

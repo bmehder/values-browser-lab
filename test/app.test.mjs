@@ -21,17 +21,13 @@ function mount(t) {
   const elements = { get: id => document.getElementById(id) }
   const actions = {
     edit: text => new model.UserEditedDraftQuery(query.from_input(text)),
-    search: new model.UserSubmittedSearch(), time: new model.UserRequestedTime(),
+    search: new model.UserSubmittedSearch(),
     save: new model.UserRequestedDraftSave(), restore: new model.UserRequestedDraftRestore(),
-    copy: new model.UserRequestedQueryCopy(), timer: new model.UserRequestedTimerStart(),
     toggle_clock: new model.UserRequestedLiveClockToggle(),
     tick: text => new model.ClockTicked(new model.ClockReading(text)),
   }
   let saved
-  const timers = []
   const perform = (effect, dispatch) => {
-    if (effect instanceof model.ReadTime)
-      dispatch(new model.ClockReturnedTime(new model.ClockReading('12:34')))
     if (effect instanceof model.SearchService)
       dispatch(new model.HttpReturnedSearchResult(effect[0], new Ok(toList([
         new model.Story(new model.StoryTitle('A story'), new model.StoryUrl('https://example.com')),
@@ -43,14 +39,11 @@ function mount(t) {
     if (effect instanceof model.ReadDraft)
       dispatch(new model.StorageReturnedReadResult(saved
         ? new Ok(saved) : new GleamError(new model.FailureReason('No saved query yet.'))))
-    if (effect instanceof model.CopyText)
-      dispatch(new model.ClipboardReturnedWriteResult(new Ok(undefined)))
-    if (effect instanceof model.StartTimer)
-      timers.push(() => dispatch(new model.TimerElapsed(effect[0])))
+
   }
   const app = start(model.initial(), update, view, subscriptions, perform, actions)
   t.after(() => app.dispose())
-  return { app, elements, timers, click: id => elements.get(id).dispatchEvent(new dom.Event('click')) }
+  return { app, elements, click: id => elements.get(id).dispatchEvent(new dom.Event('click')) }
 }
 
 test('template events update the model and preserve input and story nodes across unrelated turns', t => {
@@ -60,19 +53,20 @@ test('template events update the model and preserve input and story nodes across
   assert.equal(elements.get('search-form').dispatchEvent(new dom.Event('submit', { cancelable: true })), false)
   assert.equal(elements.get('search-status').textContent, 'Stories found')
   assert.match(elements.get('model-value').textContent, /values/)
+  assert.equal(document.getElementById('activity'), null)
+  assert.equal('activity' in JSON.parse(elements.get('model-value').textContent), false)
   const result = elements.get('results').firstElementChild
   const input = elements.get('query')
   input.focus()
   const inspector = document.querySelector('details')
   inspector.open = true
-  click('read-time')
-  assert.equal(elements.get('clock-value').textContent, '12:34')
+  click('save-query')
+  assert.equal(elements.get('storage-status').textContent, 'Saved in this browser.')
   assert.equal(elements.get('results').firstElementChild, result)
   assert.equal(elements.get('query'), input)
   assert.equal(document.activeElement, input)
   assert.equal(document.querySelector('details'), inspector)
   assert.equal(inspector.open, true)
-  assert.equal(elements.get('empty-activity').hidden, true)
 })
 
 test('app owns one clock, pauses and resumes it, and removes listeners on disposal', t => {
@@ -80,8 +74,16 @@ test('app owns one clock, pauses and resumes it, and removes listeners on dispos
   t.mock.method(globalThis, 'setInterval', callback => { callbacks.push(callback); return callbacks.length })
   t.mock.method(globalThis, 'clearInterval', handle => canceled.push(handle))
   const { app, elements, click } = mount(t)
+  document.querySelector('details').open = true
+  const inspectClock = () => JSON.parse(elements.get('model-value').textContent).clock
+  assert.equal(inspectClock().mode.type, 'ManualClock')
   click('clock-toggle')
-  click('read-time')
+  assert.equal(inspectClock().mode.type, 'LiveClock')
+  callbacks[0]()
+  assert.notEqual(elements.get('clock-value').textContent.trim(), 'Not read yet')
+  assert.equal(inspectClock().display.type, 'ClockRead')
+  assert.equal(inspectClock().display[0][0], elements.get('clock-value').textContent.trim())
+  assert.equal(document.querySelector('details').open, true)
   assert.equal(callbacks.length, 1)
   window.dispatchEvent(new dom.Event('pagehide'))
   assert.deepEqual(canceled, [1])
@@ -124,7 +126,7 @@ test('template construction is a value; rendering escapes text and events only d
   assert.deepEqual(messages, [['edit', 'new query'], 'search'])
 })
 
-test('storage and clipboard template events report outcomes and restore the input', t => {
+test('storage template events report outcomes and restore the input', t => {
   const { elements, click } = mount(t)
   const input = elements.get('query')
   input.value = 'saved words'
@@ -137,19 +139,4 @@ test('storage and clipboard template events report outcomes and restore the inpu
   assert.equal(elements.get('query'), input)
   assert.equal(input.value, 'saved words')
   assert.equal(elements.get('storage-status').textContent, 'Saved query restored.')
-  click('copy-query')
-  assert.equal(elements.get('clipboard-status').textContent, 'Copied to clipboard.')
-})
-
-test('timer template handles restart labels and ignores the obsolete completion', t => {
-  const { elements, click, timers } = mount(t)
-  click('timer-button')
-  assert.equal(elements.get('timer-status').textContent, 'Waiting for the browser…')
-  assert.equal(elements.get('timer-button').textContent.trim(), 'Restart timer')
-  click('timer-button')
-  timers[0]()
-  assert.equal(elements.get('timer-status').textContent, 'Waiting for the browser…')
-  timers[1]()
-  assert.equal(elements.get('timer-status').textContent, 'Three seconds elapsed.')
-  assert.equal(elements.get('timer-button').textContent.trim(), 'Start 3-second timer')
 })

@@ -54,7 +54,7 @@ Only the third changes the DOM. The first two are pure computation.
 
 ### What is the model?
 
-The model is the application's current account of its situation. It remembers the draft query, the search currently being treated as relevant, clock mode and reading, operation statuses, timer identity, and recent activity.
+The model is the application's current account of its situation. It remembers the draft query, the search currently being treated as relevant, clock mode and reading, and storage status.
 
 It is not the DOM, a database, or a collection of browser objects. It contains domain values. The coordinator keeps a reference to the current model and replaces that reference with the next model after each turn.
 
@@ -62,7 +62,7 @@ It is not the DOM, a database, or a collection of browser objects. It contains d
 
 `SearchService(request_id, prepared_query)` describes an interaction we want. Constructing that value does not contact a service.
 
-`StartTimer(timer_id, Milliseconds(3000))` describes waiting. It does not start a timer until `perform` interprets it.
+`SaveDraft(draft)` describes a storage write. It does not write anything until `perform` interprets it.
 
 An effect description and an operation are therefore different:
 
@@ -122,23 +122,20 @@ Start with `Message`, `Model`, and `domain.update`. These describe the applicati
 
 A draft and a submitted query can have different text. Someone may submit “values” and then type “functions” while waiting. The input should show “functions”; the pending result still belongs to “values”. We preserve those as separate facts.
 
-Similarly, a search request identifier and a timer identifier both use integer representations, but they identify different things. `SearchRequestId(1)` and `TimerId(1)` are different types. Gleam prevents us from casually swapping them.
-
-A wrapper does not automatically validate its contents. `Milliseconds` names a unit; its public constructor alone does not prove a duration is positive. Queries have a stronger, controlled API, explained in the next chapter.
+A search request identifier and a story title have different roles. `SearchRequestId(1)` and `StoryTitle("Values")` name those roles explicitly. A wrapper alone does not validate its contents; the query module provides a stronger, controlled API, explained in the next chapter.
 
 ### States replace ambiguous flags
 
-The timer is not a Boolean named `waiting` plus an unrelated status string. It has one of three states:
+The clock has a named mode:
 
 ```gleam
-pub type TimerState {
-  TimerReady
-  TimerRunning(TimerId)
-  TimerFinished
+pub type ClockMode {
+  ManualClock
+  LiveClock
 }
 ```
 
-Only `TimerRunning` carries the identity of a pending timer. There is no separate waiting flag that can disagree with that state.
+`LiveClock` requests an ongoing subscription; `ManualClock` requests none. The last reading is stored separately, so stopping the clock doesn't erase its displayed time.
 
 Storage has alternatives such as `SavingDraft`, `DraftSaved`, and `StorageFailed(reason)`. The model remembers meaning. `presentation.view` chooses words such as “Saving…” or “Saved in this browser.” That leaves success and failure available for later styling or other decisions.
 
@@ -182,19 +179,11 @@ let #(next_model, effects) = operation(current.model)
 
 The first call returns a function. The second applies that function to the current model.
 
-### Where activity gets recorded
+### Inspection stays outside the model
 
-`update` wraps its chosen operation with `record_activity(operation, message)`. That wrapper applies the operation first, then adds an `Activity(message, effects)` entry to its returned model.
+`update` directly returns the chosen operation. There is no activity-recording wrapper and no history field in the model. The runtime applies the operation, retains its returned model, publishes the view and subscriptions, and hands off effects.
 
-The order is:
-
-```text
-select operation → apply it → record activity → retain model → render → perform
-```
-
-This resembles a tap because it observes a transition at a useful point. It also changes the returned model by adding history, so it is not merely an observer.
-
-We keep at most 18 entries. Each contains the message and requested effects. We do not retain complete before/after snapshots. This is an activity list, not yet a full replay debugger.
+The collapsible inspector in `view.mjs` formats the current model without changing it. Its JSON formatter includes Gleam constructor names, so `ManualClock` and `LiveClock` do not both disappear into `{}`. Clock readings update in the open inspector as ticks arrive. This is a view of current state, not a transition log or replay facility.
 
 ## 3. Phantom types without the mystery
 
@@ -294,7 +283,7 @@ pub fn to_string(query: Query(stage)) -> String
 
 This is a signature excerpt; the implementation unpacks and returns the string. Here, the generic `stage` is appropriate. Reading the text is allowed for either stage. The function does not return a differently tagged query.
 
-Saving, copying, and displaying a draft do not require it to be searchable. Submitting it does.
+Saving and displaying a draft do not require it to be searchable. Submitting it does.
 
 ### The model's aliases preserve the domain vocabulary
 
@@ -365,11 +354,11 @@ export const search = (query, success, failure) =>
 
 A bug thrown by the application's success callback is not caught by its sibling failure handler. The failure handler translates network, timeout, and validation errors into application messages.
 
-### Storage, clipboard, time, and timers
+### Storage and the live clock
 
 `save` and `restore` are synchronous browser calls with local try/catch blocks. Their callbacks run outside those blocks. An absent saved draft is different from a saved empty string.
 
-`writeClipboard` checks support and awaits the browser write. `copy` uses sibling handlers to report success or failure. `now` formats a Date reading; `delay` calls setTimeout. The ongoing live-clock interval belongs to `app.mjs`, not this one-shot timer adapter.
+`now` formats a Date reading. The live-clock interval belongs to `app.mjs`; its ticks dispatch `ClockTicked` messages. The browser host pauses the interval on pagehide, resumes it on pageshow when requested, and clears it on disposal.
 
 These functions are deliberately ordinary JavaScript. Valibot handles runtime validation; lit-html interprets interface descriptions supplied by `view.mjs`. Neither library determines the application's Gleam decisions. There is no Task abstraction or extra execution vocabulary.
 
@@ -410,7 +399,7 @@ The message carries an unchecked query. The runtime enqueues it, selects `edit_d
 
 The form listener prevents the browser's normal page submission and dispatches `UserSubmittedSearch`.
 
-`domain.update` selects `operations.begin_search()`. Its activity wrapper is returned with it. We now have an operation value, not a running request.
+`domain.update` selects `operations.begin_search()`. We now have an operation value, not a running request.
 
 ### C. Applying the operation decides the turn
 
@@ -422,7 +411,7 @@ Preparation returns a searchable `"values"`. The operation returns:
 - A next search request ID of 2.
 - One effect: `SearchService(SearchRequestId(1), prepared_query)`.
 
-The draft is unchanged. Activity recording then adds the message and effect to the returned model.
+The draft is unchanged. The returned pair describes the next state and the requested search.
 
 If preparation had returned `EmptyQuery`, the operation would instead return `SearchReady` with no effect and no consumed request ID. That supersedes any earlier pending search in our application policy.
 
@@ -461,7 +450,7 @@ If request 1 is current, the search becomes `SearchSucceeded` or `SearchFailed`.
 
 The callback does not capture the old model. It captures the request ID and later sends a message. The coordinator supplies its current model when handling that message.
 
-If that model is waiting for request 2, the result for request 1 is ignored. An old failure cannot replace newer success, either. The activity list still records that the message arrived, because an ignored result is still an observed event.
+If that model is waiting for request 2, the result for request 1 is ignored. An old failure cannot replace newer success, either.
 
 This is logical supersession, not cancellation. Request 1 may finish and use resources even after it stops being relevant. Its deadline still limits its lifetime.
 
@@ -481,7 +470,7 @@ The pure subscription function returns `[EverySecond]` for `LiveClock`, and `[]`
 
 ### A view description, then a renderer
 
-The pure Gleam `presentation.view` maps a model to a `Screen` containing words, links, and display choices. [view.mjs](../src/app/view.mjs) maps that projection to a lit-html template, with a small function for each panel. It includes search, time, storage, clipboard, timer, activity history, and the model inspector. The static header, introduction, and explanatory footer remain in `index.html`.
+The pure Gleam `presentation.view` maps a model to a `Screen` containing words, links, and display choices. [view.mjs](../src/app/view.mjs) maps that projection to a lit-html template, with a small function for each panel. It includes search, the live clock, storage, and a collapsible current-model inspector. The static header, introduction, and explanatory footer remain in `index.html`.
 
 `appView(screen, model, dispatch, actions)` returns a template value. Construction neither creates DOM nodes nor dispatches a message. The model argument supplies the inspector's formatted text; it isn't mutated. Template event handlers dispatch messages when the user interacts.
 
@@ -497,11 +486,11 @@ Here the inner `view` is the supplied Gleam projection. The function supplied to
 
 Standalone [lit-html](https://lit.dev/docs/libraries/standalone-templates/) handles the dynamic text, input property, attributes, lists, and event listeners described by the templates. There are no manual textContent assignments, element builders, per-field binding tables, or Slank signals in the active app. No Lit component base class or application runtime is involved.
 
-Templates use `.value` for the query, `@input` and `@submit` for search messages, `@click` for control messages, and `?hidden` for the empty-history hint. Dynamic text is escaped by the renderer. List updates preserve existing nodes by position; this is not an application-level keyed-identity guarantee. Input focus and the inspector's open state survive unrelated turns.
+Templates use `.value` for the query, `@input` and `@submit` for search messages, `@click` for control messages. Dynamic text is escaped by the renderer. List updates preserve existing nodes by position; this is not an application-level keyed-identity guarantee. Input focus and the inspector's open state survive unrelated turns.
 
 The browser host still owns the `EverySecond` interval and page lifecycle events. It reuses the interval across unrelated messages, pauses on `pagehide`, and resumes on `pageshow`. Its `dispose()` stops the coordinator, removes lifecycle listeners, cancels the interval, and clears the rendered root. Template controls vanish with that root; late outcomes are ignored by the stopped coordinator.
 
-The integration checks cover every panel, input and story-node retention, text escaping, storage restoration, clipboard outcomes, timer supersession, clock lifecycle, and disposal. Happy DOM is test-only and is not bundled with the browser app. This project implements only the browser host; a different renderer remains an adapter choice.
+The integration checks cover every panel, input and story-node retention, text escaping, storage restoration, visible clock mode and reading changes in the inspector, clock lifecycle, and disposal. Happy DOM is test-only and is not bundled with the browser app. This project implements only the browser host; a different renderer remains an adapter choice.
 
 ## 7. Returning later: run, inspect, change
 
@@ -531,7 +520,7 @@ This checks Gleam formatting, runs the Gleam and JavaScript tests, and builds th
 
 The compiler-contract test builds small probes in an isolated temporary project using already-downloaded dependencies. Compile failure is its expected result for invalid examples. It removes the temporary project afterward.
 
-Pure tests cover draft preservation, normalization, blank submissions, outdated search results, timer restarts, clock subscriptions, and storage outcomes. JavaScript tests cover response validation, link safety, callback delivery, storage, clipboard failures, timeout cleanup, and the query compiler contract.
+Pure tests cover draft preservation, normalization, blank submissions, outdated search results, clock subscriptions, and storage outcomes. JavaScript tests cover response validation, link safety, callback delivery, storage failures, timeout cleanup, and the query compiler contract.
 
 These are not a replacement for a real browser check of permissions, network availability, and DOM wiring. The local app was also exercised against the real service and browser APIs during development.
 
@@ -542,13 +531,12 @@ These are not a replacement for a real browser check of permissions, network ava
 | Reject a new kind of query input | `query.prepare`; add a `QueryProblem` alternative and handle it in the operation |
 | Change what blank submission means | `operations.begin_search` |
 | Change stale-response policy | `operations.receive_search_result` |
-| Change the timer duration | `operations.start_timer` |
 | Change feedback wording | `presentation.view` |
 | Change response validation or link selection | `decodeStories` or `storyUrl` in `browser.mjs` |
 | Change how HTTP data becomes Gleam values | `browser.mjs` and the relevant FFI declaration |
 | Change the search timeout | `search` in `browser.mjs` |
 | Add an ongoing browser event source | `Subscription`, the pure subscription function, and runtime reconciliation |
-| Add snapshot/replay debugging | Activity representation and recording, while avoiding recursively nested histories |
+| Add snapshot/replay debugging | Design recording at the runtime boundary; the current inspector stores no history |
 | Change the port | The `start` script in `package.json` |
 
 Keep the semantic decision in the domain, the environmental operation in its adapter, and display wording in presentation.
@@ -559,9 +547,11 @@ Keep the semantic decision in the domain, the environmental operation in its ada
 
 **The port is already in use:** another process is listening on 8000. Stop the server you recognize or deliberately choose another port. Do not kill unrelated system services just because they listen on a port.
 
-**A click produces no activity:** inspect the template event handler, action wiring in `main.gleam`, and the browser console. The message probably has not reached the domain yet.
+**A click does nothing:** inspect the template event handler, action wiring in `main.gleam`, and the browser console. The message probably has not reached the domain yet.
 
-**Activity shows the user request but no result:** follow its effect through `perform` and the browser adapter. Search may still be pending; its deadline is 12 seconds. Clipboard policies and storage restrictions can produce legitimate failure outcomes.
+**Search remains pending:** follow its effect through `perform` and the browser adapter. Its deadline is 12 seconds; network or validation failures return a search-failure message.
+
+**The clock mode looks unchanged in the inspector:** refresh after rebuilding. The formatter includes constructor names, distinguishing `ManualClock` from `LiveClock`. The first reading arrives on the next interval tick.
 
 **A result arrives but the search stays unchanged:** compare request IDs. Ignoring an obsolete response is intentional.
 

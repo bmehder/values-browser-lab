@@ -39,9 +39,9 @@ Phantom query stages use constructorless labels (`pub type Unchecked`, `pub type
 
 ## Try it
 
-Search Hacker News, read the clock, enable live ticks, save and restore a query, copy it, or start a timer. The activity panel shows messages and requested effects. The inspector shows the current model.
+Search Hacker News, save and restore a query, or start and stop the live clock. Expand **Inspect the current model** to see the current state. Constructor names such as `ManualClock`, `LiveClock`, and `ClockRead` remain visible in the formatted display.
 
-Search uses the public Hacker News Algolia API and needs an internet connection. It sends only queries you submit, with no search at startup. Saved drafts stay in this browser's local storage. Clipboard availability depends on the browser. This is a local teaching app, with an intentionally small coordinator and renderer.
+Search uses the public Hacker News Algolia API and needs an internet connection. It sends only queries you submit, with no search at startup. Saved drafts stay in this browser's local storage. This is a local teaching app, with an intentionally small coordinator and renderer.
 
 The existing folder, Gleam package identifier, and GitHub repository retain their current names. Valuz is the runtime; Browser Lab is the example app. Reusable code has not yet been extracted into a separate package.
 

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 // npm test runs gleam test first, which copies the FFI beside its generated imports.
-import { copy, decodeStories, restore, save, search } from '../build/dev/javascript/values_browser_lab/app/browser.mjs'
+import { decodeStories, restore, save, search } from '../build/dev/javascript/values_browser_lab/app/browser.mjs'
 
 function setGlobal(t, name, value) {
   const before = Object.getOwnPropertyDescriptor(globalThis, name)
@@ -95,23 +95,6 @@ test('storage exceptions become storage failures', t => {
   assert.deepEqual(reading.failures, ['This browser could not read saved queries.'])
 })
 
-test('clipboard handles absent support, denied access, and successful writes', async t => {
-  setGlobal(t, 'navigator', {})
-  const absent = callbacks()
-  await copy('values', absent.success, absent.failure)
-  assert.deepEqual(absent.failures, ['Clipboard access is unavailable in this browser.'])
-  setGlobal(t, 'navigator', { clipboard: { writeText: async () => { throw new Error('denied') } } })
-  const denied = callbacks()
-  await copy('values', denied.success, denied.failure)
-  assert.deepEqual(denied.failures, ['Clipboard access was denied.'])
-  let written
-  setGlobal(t, 'navigator', { clipboard: { writeText: async text => { written = text } } })
-  const result = callbacks()
-  await copy('values', result.success, result.failure)
-  assert.equal(written, 'values')
-  assert.equal(result.successes.length, 1)
-  assert.deepEqual(result.failures, [])
-})
 
 test('application callback bugs do not trigger a second failure callback', async t => {
   setGlobal(t, 'localStorage', { setItem() {} })
@@ -131,23 +114,11 @@ test('malformed service data keeps the application error message', async t => {
   assert.deepEqual(result.successes, [])
 })
 
-test('clipboard getter and synchronous write exceptions report denied access', async t => {
-  setGlobal(t, 'navigator', { get clipboard() { throw new Error('blocked') } })
-  const getter = callbacks()
-  await copy('values', getter.success, getter.failure)
-  assert.deepEqual(getter.failures, ['Clipboard access was denied.'])
-  setGlobal(t, 'navigator', { clipboard: { writeText() { throw new Error('blocked') } } })
-  const write = callbacks()
-  await copy('values', write.success, write.failure)
-  assert.deepEqual(write.failures, ['Clipboard access was denied.'])
-})
 
-test('restore and clipboard callback bugs stay outside operation failure handling', async t => {
+test('restore callback bugs stay outside operation failure handling', t => {
   setGlobal(t, 'localStorage', { getItem: () => 'values' })
-  setGlobal(t, 'navigator', { clipboard: { writeText: async () => {} } })
   const failures = []
   const broken = () => { throw new Error('application bug') }
   assert.throws(() => restore(broken, reason => failures.push(reason)), /application bug/)
-  await assert.rejects(copy('values', broken, reason => failures.push(reason)), /application bug/)
   assert.deepEqual(failures, [])
 })

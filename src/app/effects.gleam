@@ -1,9 +1,7 @@
 import app/model.{
-  type Effect, type Message, type Story, ClipboardReturnedWriteResult,
-  ClockReading, ClockReturnedTime, CopyText, FailureReason,
-  HttpReturnedSearchResult, Milliseconds, ReadDraft, ReadTime, SaveDraft,
-  SearchService, StartTimer, StorageReturnedReadResult,
-  StorageReturnedSaveResult, TimerElapsed,
+  type Effect, type Message, type Story, FailureReason, HttpReturnedSearchResult,
+  ReadDraft, SaveDraft, SearchService, StorageReturnedReadResult,
+  StorageReturnedSaveResult,
 }
 import app/query
 
@@ -28,11 +26,6 @@ pub fn perform(effect: Effect, dispatch: fn(Message) -> Nil) -> Nil {
           |> dispatch
         },
       )
-    ReadTime ->
-      now()
-      |> ClockReading
-      |> ClockReturnedTime
-      |> dispatch
     SaveDraft(draft) ->
       save(
         query.to_string(draft),
@@ -66,24 +59,6 @@ pub fn perform(effect: Effect, dispatch: fn(Message) -> Nil) -> Nil {
           |> dispatch
         },
       )
-    CopyText(draft) ->
-      copy(
-        query.to_string(draft),
-        fn() {
-          Ok(Nil)
-          |> ClipboardReturnedWriteResult
-          |> dispatch
-        },
-        fn(reason) {
-          reason
-          |> FailureReason
-          |> Error
-          |> ClipboardReturnedWriteResult
-          |> dispatch
-        },
-      )
-    StartTimer(id, Milliseconds(milliseconds)) ->
-      delay(milliseconds, fn() { dispatch(TimerElapsed(id)) })
   }
 }
 
@@ -94,17 +69,8 @@ fn search(
   failure: fn(String) -> Nil,
 ) -> Nil
 
-@external(javascript, "./browser.mjs", "now")
-fn now() -> String
-
 @external(javascript, "./browser.mjs", "save")
 fn save(text: String, success: fn() -> Nil, failure: fn(String) -> Nil) -> Nil
 
 @external(javascript, "./browser.mjs", "restore")
 fn restore(success: fn(String) -> Nil, failure: fn(String) -> Nil) -> Nil
-
-@external(javascript, "./browser.mjs", "copy")
-fn copy(text: String, success: fn() -> Nil, failure: fn(String) -> Nil) -> Nil
-
-@external(javascript, "./browser.mjs", "delay")
-fn delay(milliseconds: Int, finished: fn() -> Nil) -> Nil

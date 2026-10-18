@@ -76,24 +76,3 @@ export function restore(success, failure) {
   if (text === null) failure('No saved query yet.')
   else success(text)
 }
-
-async function writeClipboard(text) {
-  let clipboard
-  try {
-    clipboard = globalThis.navigator?.clipboard
-  } catch {
-    throw new Error('Clipboard access was denied.')
-  }
-  if (typeof clipboard?.writeText !== 'function')
-    throw new Error('Clipboard access is unavailable in this browser.')
-  try {
-    await clipboard.writeText(text)
-  } catch {
-    throw new Error('Clipboard access was denied.')
-  }
-}
-
-export const copy = (text, success, failure) =>
-  writeClipboard(text).then(success, error => failure(error.message))
-
-export const delay = (milliseconds, finished) => setTimeout(finished, milliseconds)

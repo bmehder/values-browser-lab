@@ -13,8 +13,6 @@ Message → update → Operation
                       |
               Next Model + Effects
                       |
-             record Activity
-                      |
               retain Next Model
                       |
           render + reconcile + perform
@@ -82,19 +80,14 @@ Inspect archived files without changing the working tree with `git show archive/
 | Request message | Effect | Outcome message |
 |---|---|---|
 | `UserSubmittedSearch` | `SearchService` | `HttpReturnedSearchResult` |
-| `UserRequestedTime` | `ReadTime` | `ClockReturnedTime` |
 | `UserRequestedDraftSave` | `SaveDraft` | `StorageReturnedSaveResult` |
 | `UserRequestedDraftRestore` | `ReadDraft` | `StorageReturnedReadResult` |
-| `UserRequestedQueryCopy` | `CopyText` | `ClipboardReturnedWriteResult` |
-| `UserRequestedTimerStart` | `StartTimer` | `TimerElapsed` |
 
 `UserRequestedLiveClockToggle` changes clock mode. The derived `EverySecond` subscription starts or stops the interval, whose events become `ClockTicked` messages.
 
 ## Remember the limits
 
 - Ignoring an old result is not cancellation.
-- A restarted timer leaves the older timeout running; its identity makes the old completion irrelevant.
-- Activity stores messages and requested effects, not complete model snapshots.
 - Calling a browser adapter starts the operation; the Gleam effect value describes it before that call.
 - The query API enforces nonblank, trimmed queries, not general security properties.
 - The current subscription reconciler supports one source.
@@ -116,6 +109,10 @@ Stop the server with Ctrl+C. Change the port in `package.json`. Install dependen
 `runtime.create(Config(...))` returns a typed `Runtime` containing `dispatch`, `refresh`, and `stop`. The configuration supplies `initial`, `update`, `view`, `subscriptions`, `present`, `reconcile`, `perform`, and `observe`; pass a no-op function for `observe` when it is unused. The coordinator is generic over the model, messages, effects, subscriptions, and view description. [runtime_ffi.mjs](../src/valuz/runtime_ffi.mjs) supplies only reference storage and exception cleanup. Call `refresh()` after constructing the host to publish the initial state. `reconcile(descriptions, dispatch)` owns subscription interpretation; `perform(effect, dispatch)` owns effect interpretation. Neither DOM IDs nor lit-html are known by the coordinator.
 
 `app.mjs` composes the supplied Gleam model-to-Screen projection with `appView`, then passes the resulting template to `render`. It also owns the live-clock interval and page lifecycle listeners. Its `dispose()` stops the runtime, clears the interval, removes those listeners, and clears the rendered root.
+
+## Current-model inspector
+
+The collapsible inspector is a view concern. It formats current state with constructor names (`ManualClock`, `LiveClock`, `ClockRead`, and other variants) and updates when the model changes. It stores no history and adds no fields or recording wrapper to the domain.
 
 ## Interface templates
 

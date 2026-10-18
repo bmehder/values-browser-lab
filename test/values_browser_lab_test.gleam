@@ -1,11 +1,10 @@
 import app/domain
 import app/model.{
   ClockRead, ClockReading, ClockTicked, DraftRestored, EverySecond,
-  FailureReason, HttpReturnedSearchResult, LiveClock, ManualClock, Milliseconds,
-  Model, SearchReady, SearchRequestId, SearchService, SearchSucceeded, Searching,
-  StartTimer, StorageFailed, StorageReturnedReadResult, TimerElapsed,
-  TimerFinished, TimerId, TimerRunning, UserEditedDraftQuery,
-  UserRequestedLiveClockToggle, UserRequestedTimerStart, UserSubmittedSearch,
+  FailureReason, HttpReturnedSearchResult, LiveClock, ManualClock, Model,
+  SearchReady, SearchRequestId, SearchService, SearchSucceeded, Searching,
+  StorageFailed, StorageReturnedReadResult, UserEditedDraftQuery,
+  UserRequestedLiveClockToggle, UserSubmittedSearch,
 }
 import app/presentation
 import app/query.{EmptyQuery}
@@ -88,18 +87,6 @@ pub fn blank_submission_supersedes_pending_search_test() {
     apply(idle, HttpReturnedSearchResult(SearchRequestId(1), Ok([])))
   assert late.search_state == SearchReady
   assert idle.next_search_request_id == pending.next_search_request_id
-}
-
-pub fn restarted_timer_ignores_previous_completion_test() {
-  let assert #(one, [StartTimer(TimerId(1), Milliseconds(3000))]) =
-    apply(model.initial(), UserRequestedTimerStart)
-  let assert #(two, [StartTimer(TimerId(2), Milliseconds(3000))]) =
-    apply(one, UserRequestedTimerStart)
-  let assert #(stale, []) = apply(two, TimerElapsed(TimerId(1)))
-  assert stale.timer.state == TimerRunning(TimerId(2))
-  let assert #(done, []) = apply(stale, TimerElapsed(TimerId(2)))
-  assert done.timer.state == TimerFinished
-  assert presentation.view(done).timer == "Three seconds elapsed."
 }
 
 pub fn live_clock_subscription_and_late_tick_test() {
