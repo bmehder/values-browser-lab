@@ -6,6 +6,16 @@ The design follows the same broad model, view, and update pattern as [the Elm Ar
 
 The central idea is to describe decisions as values before executing external work. A transformation returns a new model and a list of effect descriptions. The runtime retains that model, renders it, then hands the effects to a performer. Results return as messages.
 
+## Why programs as values?
+
+A pure function describes a mapping from inputs to outputs. Functions are values we can select, return, and compose; composing pure functions gives us another pure function. In that sense, **a pure program is a value**.
+
+That becomes practical when a message selects a transformation. The transformation is already a value before we apply it to a model. Its result is another value: the next model paired with descriptions of requested effects. A search request can be inspected without making a request. A view can be constructed without changing the page.
+
+The outside world still needs execution. Describing a storage write does not save anything, and describing a search cannot tell us what the server will answer. We represent the request as data and the response handling as a function; the runtime connects those descriptions to execution, and external outcomes return as messages. An effectful program can have a value representation even though running it changes the world.
+
+The payoff is easier reasoning. We can examine a decision without reproducing browser timing, test a stale response by supplying a message, and compose behavior without burying state changes inside callbacks. The application describes what should happen; a small runtime carries it out. That separation is the motivation for Valuz.
+
 ## Run it
 
 Install Gleam, Node.js with npm, and Python 3. In this directory:
