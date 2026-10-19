@@ -1,48 +1,25 @@
-import app/domain
 import app/effects
-import app/model.{
-  type Effect, type Message, type Model, type Operation, type Subscription,
-  ClockTicked, UserEditedDraftQuery, UserRequestedDraftRestore,
-  UserRequestedDraftSave, UserRequestedLiveClockToggle, UserSubmittedSearch,
-}
+import app/model.{type Message, type Model}
 import app/presentation.{type Screen}
-import app/query
-
-pub type Actions {
-  Actions(
-    edit: fn(String) -> Message,
-    search: Message,
-    save: Message,
-    restore: Message,
-    toggle_clock: Message,
-    tick: fn(String) -> Message,
-  )
-}
+import app/update
+import valuz/browser
 
 pub fn main() -> Nil {
-  start(
-    model.initial(),
-    domain.update,
-    presentation.view,
-    presentation.subscriptions,
-    effects.perform,
-    Actions(
-      fn(text) { UserEditedDraftQuery(query.from_input(text)) },
-      UserSubmittedSearch,
-      UserRequestedDraftSave,
-      UserRequestedDraftRestore,
-      UserRequestedLiveClockToggle,
-      fn(time) { ClockTicked(model.ClockReading(time)) },
-    ),
-  )
+  let _ =
+    browser.start(browser.Config(
+      initial: model.initial(),
+      update: update.update,
+      presentation: presentation.describe,
+      view: view,
+      perform: effects.perform,
+      target: "app",
+    ))
+  Nil
 }
 
-@external(javascript, "./app/app.mjs", "start")
-fn start(
+@external(javascript, "./app/view.mjs", "appView")
+fn view(
+  screen: Screen,
   model: Model,
-  update: fn(Message) -> Operation,
-  view: fn(Model) -> Screen,
-  subscriptions: fn(Model) -> List(Subscription),
-  perform: fn(Effect, fn(Message) -> Nil) -> Nil,
-  actions: Actions,
-) -> Nil
+  dispatch: fn(Message) -> Nil,
+) -> browser.Template

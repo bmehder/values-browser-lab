@@ -10,14 +10,13 @@ const createRuntime = config => create(new Config(
     const [next, effects] = config.update(message)(model)
     return [next, toList(effects)]
   },
-  config.view, model => toList(config.subscriptions(model)),
-  config.present, config.reconcile, config.perform, config.observe ?? (() => {}),
+  config.view, config.present, config.perform,
 ))
 
 const defaults = overrides => ({
   initial: 0, update: amount => value => [value + amount, []],
-  view: value => `screen:${value}`, subscriptions: () => [],
-  present: () => {}, reconcile: () => {}, perform: () => {}, ...overrides,
+  view: value => `screen:${value}`,
+  present: () => {}, perform: () => {}, ...overrides,
 })
 
 test('coordinator retains the next model and queues synchronous effect responses', () => {
@@ -30,8 +29,6 @@ test('coordinator retains the next model and queues synchronous effect responses
       return [value + 1, message === 'start' ? ['respond'] : []]
     },
     present: screen => events.push(screen),
-    observe: value => events.push(`retain:${value}`),
-    reconcile: () => events.push('reconcile'),
     perform: (_, dispatch) => {
       dispatching = true
       events.push('perform')
@@ -40,22 +37,20 @@ test('coordinator retains the next model and queues synchronous effect responses
     },
   }))
   runtime.dispatch('start')
-  assert.deepEqual(events, ['update:start:0', 'screen:1', 'retain:1', 'reconcile',
-    'perform', 'update:response:1', 'screen:2', 'retain:2', 'reconcile'])
+  assert.deepEqual(events, ['update:start:0', 'screen:1', 'perform', 'update:response:1', 'screen:2'])
 })
 
-test('initial subscription responses are queued until the first publication finishes', () => {
+test('messages dispatched during initial rendering wait until publication finishes', () => {
   const events = []
   let sent = false
   const runtime = createRuntime(defaults({
-    present: screen => events.push(screen),
-    reconcile: (_, dispatch) => {
-      events.push('reconcile')
-      if (!sent) { sent = true; dispatch(1); events.push('after-dispatch') }
+    present: screen => {
+      events.push(screen)
+      if (!sent) { sent = true; runtime.dispatch(1); events.push('after-dispatch') }
     },
   }))
   runtime.refresh()
-  assert.deepEqual(events, ['screen:0', 'reconcile', 'after-dispatch', 'screen:1', 'reconcile'])
+  assert.deepEqual(events, ['screen:0', 'after-dispatch', 'screen:1'])
 })
 
 test('stopped coordinator ignores late messages and refreshes', () => {

@@ -11,10 +11,6 @@ pub type SearchRequestId {
   SearchRequestId(Int)
 }
 
-pub type ClockReading {
-  ClockReading(String)
-}
-
 pub type FailureReason {
   FailureReason(String)
 }
@@ -38,20 +34,6 @@ pub type SearchState {
   SearchFailed(query: SearchQuery, reason: FailureReason)
 }
 
-pub type ClockMode {
-  ManualClock
-  LiveClock
-}
-
-pub type ClockDisplay {
-  ClockUnread
-  ClockRead(ClockReading)
-}
-
-pub type Clock {
-  Clock(display: ClockDisplay, mode: ClockMode)
-}
-
 pub type StorageState {
   StorageReady
   SavingDraft
@@ -62,13 +44,9 @@ pub type StorageState {
 }
 
 pub type Effect {
-  SearchService(SearchRequestId, SearchQuery)
+  SearchService(request: SearchRequestId, query: SearchQuery)
   SaveDraft(DraftQuery)
   ReadDraft
-}
-
-pub type Subscription {
-  EverySecond
 }
 
 // User messages report observed input or requested work, not successful effects.
@@ -78,9 +56,10 @@ pub type Message {
   UserSubmittedSearch
   UserRequestedDraftSave
   UserRequestedDraftRestore
-  UserRequestedLiveClockToggle
-  HttpReturnedSearchResult(SearchRequestId, Result(List(Story), FailureReason))
-  ClockTicked(ClockReading)
+  HttpReturnedSearchResult(
+    request: SearchRequestId,
+    result: Result(List(Story), FailureReason),
+  )
   StorageReturnedSaveResult(Result(Nil, FailureReason))
   StorageReturnedReadResult(Result(DraftQuery, FailureReason))
 }
@@ -90,7 +69,6 @@ pub type Model {
     draft_query: DraftQuery,
     search_state: SearchState,
     next_search_request_id: SearchRequestId,
-    clock: Clock,
     storage_state: StorageState,
   )
 }
@@ -104,7 +82,6 @@ pub fn initial() -> Model {
     draft_query: query.from_input("functional programming"),
     search_state: SearchReady,
     next_search_request_id: SearchRequestId(1),
-    clock: Clock(display: ClockUnread, mode: ManualClock),
     storage_state: StorageReady,
   )
 }

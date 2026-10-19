@@ -12,8 +12,7 @@
 
 <body>
   <header class="topbar"><a class="brand" href="/">Valuz<span> / browser lab</span></a>
-    <div class="header-actions"><a class="docs-link" href="/docs/">Docs</a><a class="docs-link"
-        href="/docs/talk.html">The talk</a><span class="badge">GLEAM → JAVASCRIPT</span><a class="github-link"
+    <div class="header-actions"><span class="badge">GLEAM → JAVASCRIPT</span><a class="github-link"
         href="https://github.com/bmehder/values-browser-lab" target="_blank" rel="noopener noreferrer"
         aria-label="View source on GitHub" title="View source on GitHub"><svg viewBox="0 0 24 24" width="22" height="22"
           fill="currentColor" aria-hidden="true">
@@ -42,15 +41,17 @@
       </div>
       <ol>
         <li><strong>model.gleam</strong><span>Named values, messages, and explicit application states.</span></li>
-        <li><strong>domain.gleam</strong><span>Read a message. Return the operation it describes.</span></li>
-        <li><strong>operations.gleam</strong><span>Pure functions from the current model to the next turn.</span></li>
+        <li><strong>update.gleam</strong><span>Read a message. Return the operation it describes.</span></li>
+        <li><strong>transformations.gleam</strong><span>Pure functions from the current model to the next turn.</span>
+        </li>
         <li><strong>presentation.gleam</strong><span>Turn structured state into words for the screen.</span></li>
         <li><strong>effects.gleam</strong><span>The perform function: interpret effect descriptions at the browser
             boundary.</span></li>
         <li><strong>runtime.gleam</strong><span>Keep the model, drain messages, and call supplied adapters.</span></li>
-        <li><strong>app.mjs</strong><span>Connect template rendering and the live-clock lifecycle.</span></li>
+        <li><strong>valuz/browser.gleam + browser_ffi.mjs</strong><span>Connect template rendering and application
+            disposal.</span></li>
         <li><strong>view.mjs</strong><span>Template values describing every panel and its events.</span></li>
-        <li><strong>browser.mjs</strong><span>Fetch, clock, and storage adapters.</span></li>
+        <li><strong>browser_effects.mjs</strong><span>Fetch and storage adapters.</span></li>
       </ol>
     </section>
   </main>

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 // npm test runs gleam test first, which copies the FFI beside its generated imports.
-import { decodeStories, restore, save, search } from '../build/dev/javascript/values_browser_lab/app/browser.mjs'
+import { decodeStories, restore, save, search } from '../build/dev/javascript/values_browser_lab/app/browser_effects.mjs'
 
 function setGlobal(t, name, value) {
   const before = Object.getOwnPropertyDescriptor(globalThis, name)
@@ -121,4 +121,36 @@ test('restore callback bugs stay outside operation failure handling', t => {
   const broken = () => { throw new Error('application bug') }
   assert.throws(() => restore(broken, reason => failures.push(reason)), /application bug/)
   assert.deepEqual(failures, [])
+})
+
+
+test('search deadline aborts the request and clears its timeout', async t => {
+  let deadline
+  const cleared = []
+  t.mock.method(globalThis, 'setTimeout', callback => { deadline = callback; return 123 })
+  t.mock.method(globalThis, 'clearTimeout', handle => cleared.push(handle))
+  t.mock.method(globalThis, 'fetch', (_, { signal }) => new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+  }))
+  const result = callbacks()
+  const pending = search('values', result.success, result.failure)
+  await Promise.resolve() // The promise pipeline has now started fetch.
+  deadline()
+  await pending
+  assert.deepEqual(result.failures, ['The request timed out. Try again.'])
+  assert.deepEqual(result.successes, [])
+  assert.deepEqual(cleared, [123])
+})
+
+
+test('synchronous fetch exceptions report once and clear the timeout', async t => {
+  let cleared = 0
+  const originalClear = globalThis.clearTimeout
+  t.mock.method(globalThis, 'clearTimeout', handle => { cleared++; originalClear(handle) })
+  t.mock.method(globalThis, 'fetch', () => { throw new Error('network failure') })
+  const result = callbacks()
+  await search('values', result.success, result.failure)
+  assert.deepEqual(result.successes, [])
+  assert.deepEqual(result.failures, ['network failure'])
+  assert.equal(cleared, 1)
 })

@@ -1,9 +1,8 @@
 import app/model.{
-  type ClockReading, type DraftQuery, type FailureReason, type Operation,
-  type SearchRequestId, type Story, Clock, ClockRead, DraftRestored, DraftSaved,
-  LiveClock, ManualClock, Model, ReadDraft, ReadingDraft, SaveDraft, SavingDraft,
-  SearchFailed, SearchReady, SearchRequestId, SearchService, SearchSucceeded,
-  Searching, StorageFailed,
+  type DraftQuery, type FailureReason, type Operation, type SearchRequestId,
+  type Story, DraftRestored, DraftSaved, Model, ReadDraft, ReadingDraft,
+  SaveDraft, SavingDraft, SearchFailed, SearchReady, SearchRequestId,
+  SearchService, SearchSucceeded, Searching, StorageFailed,
 }
 import app/query.{EmptyQuery}
 
@@ -20,10 +19,13 @@ pub fn begin_search() -> Operation {
         #(
           Model(
             ..model,
-            search_state: Searching(model.next_search_request_id, query),
+            search_state: Searching(
+              request: model.next_search_request_id,
+              query: query,
+            ),
             next_search_request_id: SearchRequestId(next + 1),
           ),
-          [SearchService(model.next_search_request_id, query)],
+          [SearchService(request: model.next_search_request_id, query: query)],
         )
       }
     }
@@ -38,34 +40,12 @@ pub fn receive_search_result(
     case model.search_state {
       Searching(active, query) if active == request -> {
         let state = case result {
-          Ok(stories) -> SearchSucceeded(query, stories)
-          Error(reason) -> SearchFailed(query, reason)
+          Ok(stories) -> SearchSucceeded(query: query, stories: stories)
+          Error(reason) -> SearchFailed(query: query, reason: reason)
         }
         #(Model(..model, search_state: state), [])
       }
       _ -> #(model, [])
-    }
-  }
-}
-
-pub fn toggle_live_clock() -> Operation {
-  fn(model: model.Model) {
-    let mode = case model.clock.mode {
-      ManualClock -> LiveClock
-      LiveClock -> ManualClock
-    }
-    #(Model(..model, clock: Clock(..model.clock, mode: mode)), [])
-  }
-}
-
-pub fn receive_clock_tick(reading: ClockReading) -> Operation {
-  fn(model: model.Model) {
-    case model.clock.mode {
-      LiveClock -> #(
-        Model(..model, clock: Clock(..model.clock, display: ClockRead(reading))),
-        [],
-      )
-      ManualClock -> #(model, [])
     }
   }
 }

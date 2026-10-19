@@ -5,36 +5,36 @@ import app/model.{
 }
 import app/query
 
-// This interpreter is the only place an Effect becomes an operation.
+// Interpret effect descriptions by starting browser work.
 // Adapters report outcomes; update decides how those outcomes affect the model.
 pub fn perform(effect: Effect, dispatch: fn(Message) -> Nil) -> Nil {
   case effect {
     SearchService(id, prepared_query) ->
       search(
-        query.to_string(prepared_query),
-        fn(stories) {
+        query: query.to_string(prepared_query),
+        on_success: fn(stories) {
           stories
           |> Ok
-          |> HttpReturnedSearchResult(id, _)
+          |> HttpReturnedSearchResult(request: id, result: _)
           |> dispatch
         },
-        fn(reason) {
+        on_failure: fn(reason) {
           reason
           |> FailureReason
           |> Error
-          |> HttpReturnedSearchResult(id, _)
+          |> HttpReturnedSearchResult(request: id, result: _)
           |> dispatch
         },
       )
     SaveDraft(draft) ->
       save(
-        query.to_string(draft),
-        fn() {
+        text: query.to_string(draft),
+        on_success: fn() {
           Ok(Nil)
           |> StorageReturnedSaveResult
           |> dispatch
         },
-        fn(reason) {
+        on_failure: fn(reason) {
           reason
           |> FailureReason
           |> Error
@@ -44,14 +44,14 @@ pub fn perform(effect: Effect, dispatch: fn(Message) -> Nil) -> Nil {
       )
     ReadDraft ->
       restore(
-        fn(text) {
+        on_success: fn(text) {
           text
           |> query.from_input
           |> Ok
           |> StorageReturnedReadResult
           |> dispatch
         },
-        fn(reason) {
+        on_failure: fn(reason) {
           reason
           |> FailureReason
           |> Error
@@ -62,15 +62,22 @@ pub fn perform(effect: Effect, dispatch: fn(Message) -> Nil) -> Nil {
   }
 }
 
-@external(javascript, "./browser.mjs", "search")
+@external(javascript, "./browser_effects.mjs", "search")
 fn search(
-  query: String,
-  success: fn(List(Story)) -> Nil,
-  failure: fn(String) -> Nil,
+  query query: String,
+  on_success success: fn(List(Story)) -> Nil,
+  on_failure failure: fn(String) -> Nil,
 ) -> Nil
 
-@external(javascript, "./browser.mjs", "save")
-fn save(text: String, success: fn() -> Nil, failure: fn(String) -> Nil) -> Nil
+@external(javascript, "./browser_effects.mjs", "save")
+fn save(
+  text text: String,
+  on_success success: fn() -> Nil,
+  on_failure failure: fn(String) -> Nil,
+) -> Nil
 
-@external(javascript, "./browser.mjs", "restore")
-fn restore(success: fn(String) -> Nil, failure: fn(String) -> Nil) -> Nil
+@external(javascript, "./browser_effects.mjs", "restore")
+fn restore(
+  on_success success: fn(String) -> Nil,
+  on_failure failure: fn(String) -> Nil,
+) -> Nil

@@ -3,19 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap && npm run build:docs",
+    "build": "gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap",
     "start": "npm run build && python3 -m http.server 8000 --bind 127.0.0.1",
     "test": "gleam test && node --test test/*.test.mjs",
-    "check": "gleam format --check src test && npm test && npm run build",
-    "build:docs": "node scripts/build-docs.mjs"
+    "check": "gleam format --check src test && npm test && npm run build"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "happy-dom": "^21.0.3",
-    "marked": "^18.1.1"
+    "happy-dom": "^21.0.3"
   },
   "dependencies": {
     "lit-html": "^3.3.3",
+    "ramda": "^0.32.0",
     "valibot": "^1.5.0"
   }
 }

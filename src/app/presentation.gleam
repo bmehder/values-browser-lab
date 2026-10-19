@@ -1,8 +1,7 @@
 import app/model.{
-  type Model, type Subscription, ClockRead, ClockReading, ClockUnread,
-  DraftRestored, DraftSaved, EverySecond, FailureReason, LiveClock, ManualClock,
-  ReadingDraft, SavingDraft, SearchFailed, SearchReady, SearchSucceeded,
-  Searching, StorageFailed, StorageReady, Story, StoryTitle, StoryUrl,
+  type Model, DraftRestored, DraftSaved, FailureReason, ReadingDraft,
+  SavingDraft, SearchFailed, SearchReady, SearchSucceeded, Searching,
+  StorageFailed, StorageReady, Story, StoryTitle, StoryUrl,
 }
 import app/query
 import gleam/list
@@ -16,25 +15,15 @@ pub type Screen {
   Screen(
     draft: String,
     status: String,
-    query: String,
+    search_detail: String,
     stories: List(StoryLink),
-    clock: String,
-    clock_mode: String,
-    clock_action_label: String,
     storage: String,
   )
 }
 
-pub fn subscriptions(model: Model) -> List(Subscription) {
-  case model.clock.mode {
-    LiveClock -> [EverySecond]
-    ManualClock -> []
-  }
-}
-
-pub fn view(model: Model) -> Screen {
+pub fn describe(model: Model) -> Screen {
   let draft = query.to_string(model.draft_query)
-  let #(status, query, stories) = case model.search_state {
+  let #(status, search_detail, stories) = case model.search_state {
     SearchReady -> #(
       "Ready when you are",
       "Search Hacker News stories. No account needed.",
@@ -57,14 +46,6 @@ pub fn view(model: Model) -> Screen {
       [],
     )
   }
-  let clock = case model.clock.display {
-    ClockUnread -> "Not read yet"
-    ClockRead(ClockReading(time)) -> time
-  }
-  let #(clock_mode, clock_action_label) = case model.clock.mode {
-    LiveClock -> #("live", "Stop live clock")
-    ManualClock -> #("manual", "Start live clock")
-  }
   let storage = case model.storage_state {
     StorageReady -> "Save a query in this browser."
     SavingDraft -> "Saving…"
@@ -74,18 +55,15 @@ pub fn view(model: Model) -> Screen {
     StorageFailed(FailureReason(reason)) -> reason
   }
   Screen(
-    draft,
-    status,
-    query,
-    list.map(stories, story_link),
-    clock,
-    clock_mode,
-    clock_action_label,
-    storage,
+    draft: draft,
+    status: status,
+    search_detail: search_detail,
+    stories: list.map(stories, story_link),
+    storage: storage,
   )
 }
 
 fn story_link(story: model.Story) -> StoryLink {
   let Story(StoryTitle(title), StoryUrl(url)) = story
-  StoryLink(title, url)
+  StoryLink(title: title, url: url)
 }

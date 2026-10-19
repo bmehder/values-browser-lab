@@ -1,12 +1,3 @@
 /build
 /node_modules
 /dist
-
-# Generated documentation; Markdown and the build script are the sources.
-/docs/index.html
-/docs/reference.html
-/docs/source/
-
-/docs/talk.html
-
-/docs/runtime-contract.html

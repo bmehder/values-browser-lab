@@ -1,13 +1,11 @@
-import app/domain
 import app/model.{
-  ClockRead, ClockReading, ClockTicked, DraftRestored, EverySecond,
-  FailureReason, HttpReturnedSearchResult, LiveClock, ManualClock, Model,
-  SearchReady, SearchRequestId, SearchService, SearchSucceeded, Searching,
-  StorageFailed, StorageReturnedReadResult, UserEditedDraftQuery,
-  UserRequestedLiveClockToggle, UserSubmittedSearch,
+  DraftRestored, FailureReason, HttpReturnedSearchResult, Model, SearchReady,
+  SearchRequestId, SearchService, SearchSucceeded, Searching, StorageFailed,
+  StorageReturnedReadResult, UserEditedDraftQuery, UserSubmittedSearch,
 }
 import app/presentation
 import app/query.{EmptyQuery}
+import app/update
 import gleeunit
 
 pub fn main() {
@@ -18,7 +16,7 @@ fn apply(
   current: model.Model,
   message: model.Message,
 ) -> #(model.Model, List(model.Effect)) {
-  domain.update(message)(current)
+  update.update(message)(current)
 }
 
 fn prepared(text: String) -> query.Query(query.Searchable) {
@@ -45,7 +43,7 @@ pub fn blank_queries_cannot_be_prepared_test() {
 }
 
 pub fn operation_is_reusable_without_captured_model_test() {
-  let submit = domain.update(UserSubmittedSearch)
+  let submit = update.update(UserSubmittedSearch)
   let #(one, _) = submit(model.initial())
   let #(two, _) =
     submit(Model(..model.initial(), draft_query: query.from_input("types")))
@@ -89,20 +87,6 @@ pub fn blank_submission_supersedes_pending_search_test() {
   assert idle.next_search_request_id == pending.next_search_request_id
 }
 
-pub fn live_clock_subscription_and_late_tick_test() {
-  let initial = model.initial()
-  assert presentation.subscriptions(initial) == []
-  let assert #(on, []) = apply(initial, UserRequestedLiveClockToggle)
-  assert on.clock.mode == LiveClock
-  assert presentation.subscriptions(on) == [EverySecond]
-  let assert #(ticked, []) = apply(on, ClockTicked(ClockReading("12:34:56")))
-  let assert #(off, []) = apply(ticked, UserRequestedLiveClockToggle)
-  assert off.clock.mode == ManualClock
-  assert presentation.subscriptions(off) == []
-  let assert #(late, []) = apply(off, ClockTicked(ClockReading("12:34:57")))
-  assert late.clock.display == ClockRead(ClockReading("12:34:56"))
-}
-
 pub fn storage_failure_preserves_draft_test() {
   let initial = model.initial()
   let assert #(failed, []) =
@@ -124,5 +108,5 @@ pub fn editing_draft_preserves_submitted_query_test() {
     apply(pending, UserEditedDraftQuery(query.from_input("something else")))
   assert edited.search_state
     == Searching(SearchRequestId(1), prepared("functional programming"))
-  assert presentation.view(edited).draft == "something else"
+  assert presentation.describe(edited).draft == "something else"
 }
