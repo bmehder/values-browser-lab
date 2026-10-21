@@ -2,7 +2,7 @@
 
 Valuz is a small runtime for Model–View–Update (MVU) applications. Browser Lab is a working example: search Hacker News and save or restore the draft query in local storage.
 
-The design follows the same broad model, view, and update pattern as [the Elm Architecture](https://guide.elm-lang.org/architecture/). Here, Gleam compiles to JavaScript and handles the application's types and pure decisions. JavaScript handles HTML templates and browser APIs through [Gleam's foreign function interface (FFI)](https://gleam.run/documentation/externals/). Gleam is the implementation language; Elm is the architectural reference.
+The design follows the same broad model, view, and update pattern as [the Elm Architecture](https://guide.elm-lang.org/architecture/). Valuz's browser runtime is written in TypeScript and compiled to JavaScript. In Browser Lab, Gleam handles the application's types and pure decisions and also compiles to JavaScript. JavaScript handles HTML templates and browser APIs through [Gleam's foreign function interface (FFI)](https://gleam.run/documentation/externals/). Elm is the architectural reference; the runtime can also run applications written entirely in JavaScript or TypeScript.
 
 The central idea is to describe decisions as values before executing external work. A transformation returns a new model and a list of effect descriptions. The runtime retains that model, renders it, then hands the effects to a performer. Results return as messages.
 
@@ -29,9 +29,11 @@ npm start
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Stop the server with Ctrl+C. The server serves built files; after editing source, run `npm run build` and refresh the page. Change the port in the `start` script in `package.json`.
 
 ```sh
-npm run build   # Compile Gleam and bundle the browser entry point
-npm test        # Gleam, JavaScript, browser-integration, and compiler-contract tests
-npm run check   # Check Gleam formatting, run tests, and build
+npm run typecheck      # Strictly check the TypeScript runtime
+npm run build:runtime  # Check and compile runtime.ts to runtime.mjs
+npm run build          # Compile the runtime and Gleam, then bundle the app
+npm test               # Compile the runtime, then run the test suites
+npm run check          # Check formatting, run tests, and build
 ```
 
 Search uses the public Hacker News Algolia API and requires an internet connection. No API key is needed. Queries are sent only when submitted; there is no request at startup. Saved drafts remain in this browser's local storage.
@@ -75,9 +77,9 @@ UserEditedDraftQuery(query) -> transformations.edit_draft(query)
 
 Those calls build and return functions. They can capture message data, but do not receive a model or perform effects yet. The runtime supplies the current model later:
 
-```gleam
-let operation = config.update(message)
-let #(next_model, effects) = operation(current_model)
+```ts
+const transformation = update(message)
+const [nextModel, effects] = transformation(model)
 ```
 
 This keeps the update table readable while leaving the details in named transformations.
@@ -97,12 +99,9 @@ Application behavior lives in `src/app/`. Reusable execution and browser startup
 | [src/app/view.mjs](src/app/view.mjs) | HTML template values and event handlers that dispatch messages |
 | [src/app/effects.gleam](src/app/effects.gleam) | Interpret effects and wrap browser outcomes as messages |
 | [src/app/browser_effects.mjs](src/app/browser_effects.mjs) | Fetch, response validation, safe links, and local storage |
-| [src/valuz/browser.gleam](src/valuz/browser.gleam) | Typed browser configuration and runtime assembly |
-| [src/valuz/browser_ffi.mjs](src/valuz/browser_ffi.mjs) | Mount to the DOM, render with lit-html, and dispose |
-| [src/valuz/runtime.gleam](src/valuz/runtime.gleam) | Retain the model and process application turns in order |
-| [src/valuz/runtime_ffi.mjs](src/valuz/runtime_ffi.mjs) | Mutable reference storage and exception cleanup |
+| [src/valuz/runtime.ts](src/valuz/runtime.ts) | Typed browser runtime: model retention, queue ordering, rendering, effects, and disposal |
 
-`index.html` is the static page shell, including `<div id="app">`. `style.css` supplies styling. [entry.mjs](entry.mjs) starts the compiled Gleam program. Generated files live under `build/` and `dist/`; edit the source files instead.
+`index.html` is the static page shell, including `<div id="app">`. `style.css` supplies styling. [entry.mjs](entry.mjs) starts the compiled Gleam program. The build checks `src/valuz/runtime.ts` with TypeScript, then uses esbuild to generate `src/valuz/runtime.mjs` and its source map for Gleam’s FFI. Those generated files, `build/`, and `dist/` are ignored by Git. Edit `runtime.ts`; builds and tests regenerate its JavaScript automatically. TypeScript is a development dependency; the browser runs JavaScript.
 
 ## Startup and rendering
 
@@ -111,17 +110,18 @@ Application behavior lives in `src/app/`. Reusable execution and browser startup
 `main` supplies one named configuration:
 
 ```gleam
-browser.start(browser.Config(
+start(Config(
   initial: model.initial(),
   update: update.update,
-  presentation: presentation.describe,
-  view: view,
+  view: fn(model, dispatch) {
+    view(presentation.describe(model), model, dispatch)
+  },
   perform: effects.perform,
   target: "app",
 ))
 ```
 
-`valuz/browser.gleam` connects these functions to the generic runtime. The browser host finds the target element, connects message dispatch, and calls `runtime.refresh()` to publish the initial state.
+`main.gleam` declares `start` as an external function bound to `./valuz/runtime.mjs`. The runtime finds the target element, retains the initial model, creates message dispatch, and calls `refresh()` to render the initial state. `start` returns an app handle with `dispatch`, `refresh`, and `dispose`.
 
 The rendering path is:
 
@@ -131,7 +131,7 @@ Model → presentation.describe → Screen → view.mjs → Template → lit-htm
 
 Presentation handles domain alternatives exhaustively in Gleam: ready, searching, successful, empty, or failed. Its `Screen` contains the draft, search heading, search detail, story links, and storage feedback. The JavaScript view places those values in markup.
 
-The view uses **standalone lit-html from Lit**, rather than Lit components or a second application runtime. Building a template produces a value; `render` interprets it in the DOM. There are no signals watching the model. Every processed message explicitly publishes the next view, and lit-html updates the changing template parts.
+The view uses **standalone lit-html from Lit**, rather than Lit components or a second application runtime. Building a template produces a value; `render` interprets it in the regular DOM inside the target element, where ordinary CSS rules apply. There are no signals watching the model. Every processed message explicitly publishes the next view, and lit-html updates the changing template parts.
 
 Template event handlers construct compiled Gleam messages directly. For example:
 
@@ -153,27 +153,82 @@ The collapsible model inspector is part of the view. It formats current state, i
 
 Each request has its own 12-second abort deadline, cleared after success or failure. Ignoring an obsolete response does not cancel its network request.
 
-## What the runtime guarantees
+## The typed runtime contract
 
-The runtime's configuration consists of `initial`, `update`, `view`, `present`, and `perform`. It does not know application message constructors, search rules, DOM IDs, or storage keys.
+[src/valuz/runtime.ts](src/valuz/runtime.ts) contains both the contracts and execution code. Its generic type parameters name the application's model, message, and effect types; Valuz does not define their contents.
+
+```ts
+type Dispatch<Message> = (message: Message) => void
+
+type Transformation<Model, Effect> = (
+  model: Model,
+) => readonly [nextModel: Model, effects: Iterable<Effect>]
+
+type Update<Model, Message, Effect> = (
+  message: Message,
+) => Transformation<Model, Effect>
+```
+
+`Iterable<Effect>` accepts JavaScript arrays and compiled Gleam lists. The labeled tuple keeps the next model and its requested effects together. `View<Model, Message>` accepts a model and dispatch function and returns a lit-html template or simple display value. `Perform<Effect, Message>` accepts one effect and dispatch; it starts external work, whose eventual outcome can return through dispatch.
+
+The configuration has five fields:
+
+| Field | Meaning |
+|---|---|
+| `initial` | Starting model |
+| `update` | Message-to-transformation function |
+| `view` | `(model, dispatch) → view description` |
+| `perform` | `(effect, dispatch) → external work`; defaults to a no-op for apps without effects |
+| `target` | ID of the DOM element to render into |
+
+Browser Lab composes its Gleam presentation function with the JavaScript template function to supply `view`. Presentation is an application choice, rather than a separate runtime hook.
+
+### Reading the execution code
+
+`start` holds one `model`, a `Message[]` queue, and two Boolean flags: `isProcessing` and `isStopped`. The inner functions share that state through closures.
 
 | Function | Job |
 |---|---|
-| `create` | Store the initial state and return `dispatch`, `refresh`, and `stop` |
-| `dispatch` | Queue a message and request processing |
-| `run` | Guard against nested processing; release the guard even after an exception |
-| `drain` | Process queued messages in arrival order |
-| `apply_message` | Apply a decision, retain its model, publish, then hand off effects |
-| `publish` | Derive the view description and call the presenter |
-| `perform_effects` | Start effects in list order, stopping if the runtime is stopped |
+| `start` | Find the mount target, create the app, render initial state, and return its controls |
+| `dispatch` | Append a message to the queue and request processing |
+| `drain` | Guard processing, optionally refresh, and process messages until drained |
+| `isDrained` | Check whether the app is stopped or the queue is empty |
+| `applyNextMessage` | Remove the oldest message and apply it |
+| `applyMessage` | Calculate a decision, retain the next model, render, and hand off effects |
+| `renderModel` | Build the view description and pass it to lit-html |
+| `performEffects` | Traverse effects using native `forEach`, checking disposal before each handoff |
+| `refresh` | Render current state without applying an update |
+| `dispose` | Stop processing, clear queued messages, and clear the rendered root |
 
-`refresh` is a function stored in the returned `Runtime` record, not a separate named function. It publishes current state without applying an update. `stop` clears queued messages and ignores future dispatches and refreshes.
+A local `until` helper performs iterative, stack-safe queue draining. It checks the queue again after each turn, including messages added by immediate effect callbacks. The non-null assertion on `messages.shift()!` reflects that precondition: the helper checks `isDrained` before taking the next message.
 
-The queue matters even with synchronous APIs. Saving to local storage can dispatch its result immediately. That result waits until the current turn finishes instead of interrupting it. Two internal lists, `waiting` and `incoming`, implement one FIFO queue without repeatedly appending to immutable lists.
+The queue matters even with synchronous APIs. A local-storage effect can dispatch its result before its performer returns. `isProcessing` prevents nested draining; the response waits until the current turn finishes. No network request blocks the queue while it waits for a response.
 
-The runtime is effectful: it changes a reference containing the current model and coordination state. Individual application transformations remain pure. The JavaScript helper supplies only `reference`, `read`, `write`, and `with_cleanup`.
+The runtime is effectful: it retains mutable coordination state, renders, and starts effects. Application transformations remain pure. It has no application imports and uses no Ramda dependency; its rendering dependency is lit-html.
 
-An unexpected rendering or adapter exception still escapes. The model may already have been retained and some external work may already have started. Releasing the processing guard is not transaction rollback or an automatic recovery policy. Stopping ignores late outcomes; it does not automatically cancel pending requests. Subscriptions, observation hooks, persistent history, and replay are not implemented in the current runtime.
+An unexpected rendering or adapter exception escapes, and `finally` releases the processing guard. The model may already have been retained and some work may have started; this is not rollback or an automatic recovery policy. Disposal ignores late outcomes but does not cancel pending network requests. Subscriptions, history, and replay are outside the current contract.
+
+## Using Valuz with JavaScript
+
+The runtime accepts ordinary JavaScript functions. After `npm run build:runtime`, a bundled browser entry can import its generated JavaScript:
+
+```js
+import { html } from 'lit-html'
+import { start } from './src/valuz/runtime.mjs'
+
+const app = start({
+  initial: 0,
+  update: amount => count => [count + amount, []],
+  view: (count, dispatch) => html`
+    <button @click=${() => dispatch(1)}>Count: ${count}</button>
+  `,
+  target: 'app',
+})
+```
+
+Provide `<div id="app"></div>` in the page. The initial view renders automatically. Messages can also enter through `app.dispatch(message)`; `app.refresh()` republishes current state and `app.dispose()` shuts the app down. This counter needs no effect performer because its transformations return empty effect arrays.
+
+TypeScript applications can import `Config`, `Dispatch`, `Transformation`, `Update`, `View`, `Perform`, and `App` from `runtime.ts` for explicit contracts. The runtime does not require Gleam models or message constructors.
 
 ## Gleam and JavaScript at the boundary
 
@@ -185,10 +240,10 @@ fn view(
   screen: Screen,
   model: Model,
   dispatch: fn(Message) -> Nil,
-) -> browser.Template
+) -> Template
 ```
 
-The same mechanism connects `effects.gleam` to `browser_effects.mjs`. The compiler checks Gleam callers against the declaration; it does not verify the JavaScript implementation. Integration tests cover that boundary.
+The runtime binding is `@external(javascript, "./valuz/runtime.mjs", "start")`. The named Gleam `Config` record exposes properties matching the TypeScript configuration. The same mechanism connects `effects.gleam` to `browser_effects.mjs`. The compiler checks Gleam callers against the declaration; it does not verify the JavaScript implementation. Integration tests cover that boundary.
 
 JavaScript imports generated Gleam constructors to produce the values those callbacks expect. Named record fields become named JavaScript properties; unnamed wrapper payloads use positional properties. Gleam lists cross the boundary using `toList` and `.toArray()`.
 
@@ -247,4 +302,4 @@ The compiler preserves that distinction after validation. The stage adds no runt
 
 ## Scope
 
-Valuz is a local experiment, not a published package or a full application framework. Browser Lab currently demonstrates search, stale-response handling, synchronous storage outcomes, and a small model inspector. The reusable browser starter chooses lit-html; the lower-level runtime accepts supplied view and presenter functions. No CLI host or subscription system is maintained here.
+Valuz is a local experiment, not a published package or a full application framework. Browser Lab currently demonstrates search, stale-response handling, synchronous storage outcomes, and a small model inspector. The single-file runtime uses lit-html and accepts supplied update, view, and effect functions. No CLI host or subscription system is maintained here.

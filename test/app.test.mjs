@@ -6,12 +6,11 @@ import { readFileSync } from 'node:fs'
 const dom = new Window()
 Object.assign(globalThis, { window: dom, document: dom.document,
   AbortController: dom.AbortController })
-const { mount: mountBrowser } = await import('../build/dev/javascript/values_browser_lab/valuz/browser_ffi.mjs')
+const { start } = await import('../build/dev/javascript/values_browser_lab/valuz/runtime.mjs')
 const { searchPanel, appView } = await import('../build/dev/javascript/values_browser_lab/app/view.mjs')
 const { render } = await import('lit-html')
 const markup = readFileSync('index.html', 'utf8').match(/<body>([\s\S]*?)<\/body>/)[1]
 import * as model from '../build/dev/javascript/values_browser_lab/app/model.mjs'
-const { Config, create_runtime } = await import('../build/dev/javascript/values_browser_lab/valuz/browser.mjs')
 import { update } from '../build/dev/javascript/values_browser_lab/app/update.mjs'
 import { describe } from '../build/dev/javascript/values_browser_lab/app/presentation.mjs'
 import { Ok, Error as GleamError, toList } from '../build/dev/javascript/values_browser_lab/gleam.mjs'
@@ -34,15 +33,13 @@ function mount(t) {
         ? new Ok(saved) : new GleamError(new model.FailureReason('No saved query yet.'))))
 
   }
-  const config = new Config(model.initial(), update, describe, appView, perform, 'app')
-  let runtime
-  const app = mountBrowser(
-    present => { runtime = create_runtime(config, present); return runtime },
-    ([screen, model], dispatch) => appView(screen, model, dispatch),
-    'app',
-  )
+  const app = start({
+    initial: model.initial(), update,
+    view: (model, dispatch) => appView(describe(model), model, dispatch),
+    perform, target: 'app',
+  })
   t.after(() => app.dispose())
-  return { app, runtime, elements, click: id => elements.get(id).dispatchEvent(new dom.Event('click')) }
+  return { app, elements, click: id => elements.get(id).dispatchEvent(new dom.Event('click')) }
 }
 
 test('template events update the model and preserve input and story nodes across unrelated turns', t => {
@@ -69,12 +66,12 @@ test('template events update the model and preserve input and story nodes across
 })
 
 test('disposal clears the view and ignores late messages', t => {
-  const { app, runtime, elements } = mount(t)
+  const { app, elements } = mount(t)
   const inspector = elements.get('model-value')
   const inspected = inspector.textContent
   app.dispose()
-  runtime.dispatch(new model.UserSubmittedSearch())
-  runtime.refresh()
+  app.dispatch(new model.UserSubmittedSearch())
+  app.refresh()
   assert.equal(document.getElementById('app').childElementCount, 0)
   assert.equal(inspector.textContent, inspected)
 })
@@ -122,12 +119,12 @@ test('storage template events report outcomes and restore the input', t => {
 })
 
 
-test('missing mount target is reported before the runtime is created', () => {
+test('missing mount target is reported before rendering', () => {
   document.body.innerHTML = ''
-  let created = false
-  assert.throws(
-    () => mountBrowser(() => { created = true }, appView, 'missing'),
-    /Valuz could not find the mount target #missing/,
-  )
-  assert.equal(created, false)
+  let rendered = false
+  assert.throws(() => start({
+    initial: 0, update: () => model => [model, []],
+    view: () => { rendered = true; return '' }, target: 'missing',
+  }), /Valuz could not find the mount target #missing/)
+  assert.equal(rendered, false)
 })

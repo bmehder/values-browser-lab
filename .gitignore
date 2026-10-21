@@ -1,3 +1,7 @@
 /build
 /node_modules
 /dist
+
+# JavaScript compiled from the typed runtime for Gleam's FFI.
+/src/valuz/runtime.mjs
+/src/valuz/runtime.mjs.map

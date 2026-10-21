@@ -3,14 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap",
+    "build": "npm run build:runtime && gleam build && esbuild entry.mjs --bundle --format=esm --outfile=dist/app.js --sourcemap",
     "start": "npm run build && python3 -m http.server 8000 --bind 127.0.0.1",
-    "test": "gleam test && node --test test/*.test.mjs",
-    "check": "gleam format --check src test && npm test && npm run build"
+    "test": "npm run build:runtime && gleam test && node --test test/*.test.mjs",
+    "check": "gleam format --check src test && npm test && npm run build",
+    "typecheck": "tsc --noEmit",
+    "build:runtime": "npm run typecheck && esbuild src/valuz/runtime.ts --format=esm --outfile=src/valuz/runtime.mjs --sourcemap"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "happy-dom": "^21.0.3"
+    "happy-dom": "^21.0.3",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "lit-html": "^3.3.3",

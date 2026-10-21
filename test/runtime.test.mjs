@@ -1,121 +1,120 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { create, Config } from '../build/dev/javascript/values_browser_lab/valuz/runtime.mjs'
-import { toList } from '../build/dev/javascript/values_browser_lab/gleam.mjs'
+import { Window } from 'happy-dom'
 
-// Supply Gleam lists at the compiled module boundary.
-const createRuntime = config => create(new Config(
-  config.initial,
-  message => model => {
-    const [next, effects] = config.update(message)(model)
-    return [next, toList(effects)]
-  },
-  config.view, config.present, config.perform,
-))
+const dom = new Window()
+Object.assign(globalThis, { window: dom, document: dom.document })
+const { start } = await import('../src/valuz/runtime.mjs')
 
-const defaults = overrides => ({
-  initial: 0, update: amount => value => [value + amount, []],
-  view: value => `screen:${value}`,
-  present: () => {}, perform: () => {}, ...overrides,
-})
+// These applications use plain JavaScript models, messages, arrays, and views.
+function mount(t, overrides = {}) {
+  document.body.innerHTML = '<div id="app"></div>'
+  const app = start({
+    initial: 0,
+    update: amount => value => [value + amount, []],
+    view: value => `screen:${value}`,
+    target: 'app',
+    ...overrides,
+  })
+  t.after(() => app.dispose())
+  return app
+}
 
-test('coordinator retains the next model and queues synchronous effect responses', () => {
+test('retains the next model and queues synchronous effect responses', t => {
   const events = []
   let dispatching = false
-  const runtime = createRuntime(defaults({
+  const app = mount(t, {
     update: message => value => {
       assert.equal(dispatching, false)
       events.push(`update:${message}:${value}`)
       return [value + 1, message === 'start' ? ['respond'] : []]
     },
-    present: screen => events.push(screen),
+    view: value => { events.push(`screen:${value}`); return String(value) },
     perform: (_, dispatch) => {
       dispatching = true
       events.push('perform')
       dispatch('response')
       dispatching = false
     },
-  }))
-  runtime.dispatch('start')
-  assert.deepEqual(events, ['update:start:0', 'screen:1', 'perform', 'update:response:1', 'screen:2'])
+  })
+  app.dispatch('start')
+  assert.deepEqual(events, ['screen:0', 'update:start:0', 'screen:1',
+    'perform', 'update:response:1', 'screen:2'])
+  assert.equal(document.getElementById('app').textContent, '2')
 })
 
-test('messages dispatched during initial rendering wait until publication finishes', () => {
+test('messages dispatched during initial rendering wait until it finishes', t => {
   const events = []
   let sent = false
-  const runtime = createRuntime(defaults({
-    present: screen => {
-      events.push(screen)
-      if (!sent) { sent = true; runtime.dispatch(1); events.push('after-dispatch') }
-    },
-  }))
-  runtime.refresh()
+  mount(t, { view: (value, dispatch) => {
+    events.push(`screen:${value}`)
+    if (!sent) { sent = true; dispatch(1); events.push('after-dispatch') }
+    return String(value)
+  } })
   assert.deepEqual(events, ['screen:0', 'after-dispatch', 'screen:1'])
+  assert.equal(document.getElementById('app').textContent, '1')
 })
 
-test('stopped coordinator ignores late messages and refreshes', () => {
+test('disposed app ignores late messages and refreshes', t => {
   const screens = []
-  const runtime = createRuntime(defaults({ present: value => screens.push(value) }))
-  runtime.refresh()
-  runtime.dispatch(1)
-  runtime.stop()
-  runtime.dispatch(5)
-  runtime.refresh()
-  assert.deepEqual(screens, ['screen:0', 'screen:1'])
+  const app = mount(t, { view: value => { screens.push(value); return String(value) } })
+  app.dispatch(1)
+  app.dispose()
+  app.dispatch(5)
+  app.refresh()
+  assert.deepEqual(screens, [0, 1])
+  assert.equal(document.getElementById('app').textContent, '')
 })
 
-test('coordinator releases its processing guard if an adapter throws', () => {
-  const screens = []
-  const runtime = createRuntime(defaults({ present: value => {
-    if (value === 'screen:1') throw new Error('adapter bug')
-    screens.push(value)
-  } }))
-  assert.throws(() => runtime.dispatch(1), /adapter bug/)
-  runtime.dispatch(1)
-  assert.deepEqual(screens, ['screen:2'])
+test('releases the processing guard if rendering throws', t => {
+  const app = mount(t, { view: value => {
+    if (value === 1) throw new Error('adapter bug')
+    return String(value)
+  } })
+  assert.throws(() => app.dispatch(1), /adapter bug/)
+  app.dispatch(1)
+  assert.equal(document.getElementById('app').textContent, '2')
 })
 
-
-
-test('messages stay FIFO across queued batches and a long chain does not grow the stack', () => {
+test('a long chain of immediate responses does not grow the stack', t => {
   const seen = []
-  const runtime = createRuntime(defaults({
+  const app = mount(t, {
     update: message => value => {
       seen.push(message)
       return [value + 1, message < 10000 ? [message + 1] : []]
     },
+    view: () => '',
     perform: (message, dispatch) => dispatch(message),
-  }))
-  runtime.dispatch(0)
+  })
+  app.dispatch(0)
   assert.equal(seen.length, 10001)
   assert.equal(seen.every((message, index) => message === index), true)
 })
 
-test('queued siblings precede messages produced by the first sibling', () => {
+test('queued siblings precede messages produced by the first sibling', t => {
   const seen = []
-  const runtime = createRuntime(defaults({
+  const app = mount(t, {
     update: message => value => {
       seen.push(message)
       return [value, message === 'start' ? ['a', 'b'] : message === 'a' ? ['c'] : []]
     },
     perform: (message, dispatch) => dispatch(message),
-  }))
-  runtime.dispatch('start')
+  })
+  app.dispatch('start')
   assert.deepEqual(seen, ['start', 'a', 'b', 'c'])
 })
 
-test('stopping during an effect clears queued replies and skips remaining effects', () => {
-  const effects = [], screens = []
-  const runtime = createRuntime(defaults({
+test('disposal during an effect clears queued replies and skips remaining effects', t => {
+  const effects = []
+  const app = mount(t, {
     update: () => value => [value + 1, ['first', 'second']],
-    present: screen => screens.push(screen),
     perform: (effect, dispatch) => {
       effects.push(effect)
       dispatch('reply')
-      runtime.stop()
+      app.dispose()
     },
-  }))
-  runtime.dispatch('start')
+  })
+  app.dispatch('start')
   assert.deepEqual(effects, ['first'])
-  assert.deepEqual(screens, ['screen:1'])
+  assert.equal(document.getElementById('app').textContent, '')
 })
